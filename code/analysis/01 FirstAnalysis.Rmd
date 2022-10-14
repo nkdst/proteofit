@@ -19,9 +19,20 @@ library(DESeq2)
 library(ggfortify) # autoplot (PCA)
 # library(gridExtra)
 library(ggpubr)
+
+# Heatmaps
+# ## Github & ComplexHeatmap ----
+if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
+  devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)
+  # BiocManager::install("ComplexHeatmap")
+}
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+library(gplots) # (heatmap.2)
 ```
 
-## Overview
+# Overview
 
 ## Preparing data
 
@@ -36,7 +47,7 @@ counts.soleus <- soleus[, 1:12]
 
 ```
 
-### Treemap
+## Treemap
 
 both counts have the same genes analysed
 
@@ -51,9 +62,9 @@ treemap::treemap(gene_biotypes,
                  title = "Gene biotypes")
 ```
 
-## Filtering
+# Filtering
 
-### Overview
+## Overview
 
 For a broad overview all genes with `rowSums() < 10` will be displayed. This is usually similar to omitting genes with zero counts of more than 30%
 
@@ -96,7 +107,7 @@ p.soleus
 
 ```
 
-### omitting genes (actual filtering)
+## omitting genes (actual filtering)
 
 omitting genes with zero counts in more than 30% of the samples
 
@@ -111,9 +122,11 @@ counts.gastroc <- omitZeroCounts(counts.gastroc)
 counts.soleus <- omitZeroCounts(counts.soleus)
 ```
 
-## Quality assessment
 
-### (Library sizes)
+
+# Quality assessment
+
+## Library sizes
 
 -   too many zero counts
 -   different total counts
@@ -191,6 +204,9 @@ p
 
 ### using DESeq2::rlog to normalize
 
+Just for exploration purpose, but the resulting data is not used in the
+following analysis.
+
 ```{r message=FALSE}
 p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
   as.data.frame() %>%
@@ -215,15 +231,11 @@ x = dev.off()  # see above
 p
 ```
 
+# most variable genes (top 1000)
+To obtain the most variable genes, a z-score will be applied to then take the
+sd and filter for the top 1000
 
-## PCA
-
-
-#### most variable genes (top 1000)
-
--   applying z-score to then take the sd and filter for the top 1000
-
-$x -\frac{ mean(x)}{sd(x)}$
+$\frac{x - mean(x)}{sd(x)}$
 
 ```{r}
 mostVariableRows <- function(M, ntop=1000) {
@@ -233,7 +245,7 @@ mostVariableRows <- function(M, ntop=1000) {
   
   # sd ordered descending
   sdev <- apply(counts.gastroc, 1, sd)
-  M.top <- M[order(sdev, decreasing = T)[1:1000] , ]
+  M.top <- M[order(sdev, decreasing = T)[1:ntop] , ]
   return(M.top)
 }
 
@@ -242,29 +254,26 @@ counts.soleus.top <- mostVariableRows(counts.soleus)
 ```
 
 
+## visualization with Heatmaps
+To visualize the top 1000 most variable genes, I tried to generate some Heatmaps. (This time not using DESeq2::rlog, but just `log2(counts)`. Using the raw counts
+I could try to just apply `log2` to all counts and then create a heatmap.
 
+### `ComplexHeatmap`
+The following Heatmaps are done with `ComplexHeatmap` but are very bad looking.
 
-```{r}
-## Github & ComplexHeatmap ----
-if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
-  devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)
-  # BiocManager::install("ComplexHeatmap")
-}
-library(ComplexHeatmap)
-library(circlize)
-library(RColorBrewer)
+#### gastroc
+
+```{r message=FALSE}
 # Get some nicer colours
 mypalette <- brewer.pal(11, "RdYlBu")
 # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
 morecols <- colorRampPalette(mypalette)
 
 
-rlogcounts.gastroc.top <- DESeq2::rlog(as.matrix(counts.gastroc.top))
-
-chm <- Heatmap(
-    rlogcounts.gastroc.top,
+chm.gastroc <- Heatmap(
+    log2(counts.gastroc.top + 1) %>% as.matrix(),
     row_title = "genes",
-    name = "rlog",
+    name = "log2",
     show_row_names = FALSE,
     column_title = "samples",
     col = rev(morecols(50)),
@@ -272,47 +281,85 @@ chm <- Heatmap(
     # row_dend_side = "right",
   )
 
-# chm
+# saving the CHM as png, to adjust the resolution (I don't know another method)
 png(
-  "./code/analysis/01_CHM.png",
+  "./plots/01_CHM_top_variable_genes.gastroc.png",
   width = 10,
   height = 7.5,
   res = 150,
   units = "in"
 )
-draw(chm)
-dev.off()
-
+draw(chm.gastroc)
+invisible(dev.off())
 ```
-![](./code/analysis/01_CHM.png)
+
+![](./plots/01_CHM_top_variable_genes.gastroc.png)
+
+#### soleus
+
+```{r message=FALSE}
+chm.soleus <- Heatmap(
+    log2(counts.soleus.top + 1) %>% as.matrix(),
+    row_title = "genes",
+    name = "log2",
+    show_row_names = FALSE,
+    column_title = "samples",
+    col = rev(morecols(50)),
+    column_title_side = "bottom"
+    # row_dend_side = "right",
+  )
+
+# saving the CHM as png, to adjust the resolution (I don't know another method)
+png(
+  "./plots/01_CHM_top_variable_genes.soleus.png",
+  width = 10,
+  height = 7.5,
+  res = 150,
+  units = "in"
+)
+draw(chm.soleus)
+invisible(dev.off())
+```
+
+![](./plots/01_CHM_top_variable_genes.soleus.png)
 
 
+
+### `gplots::heatmap.2`
+
+With this package, the heatmaps are seemingly generated differently, even though
+I thought both packages use `hclust()`. Not sure yet what is the difference.
 
 ```{r}
-library(gplots)
-
 # Set up colour vector for celltype variable
 col.cell <- rep(c("purple"), 12)
 col.cell[metadata.gastroc$genotype == "KO"] = "orange"
 
-heatmap.2(DESeq2::rlog(as.matrix(counts.gastroc.top)), 
-          col=rev(morecols(50)),
-          trace="column", 
-          main="Top 1000 most variable\n genes across samples",
+heatmap.2(log2(as.matrix(counts.gastroc.top + 1)),
           labRow = FALSE,
-          ColSideColors=col.cell,scale="row")
+          col=rev(morecols(50)),
+          ColSideColors=col.cell, scale="row",
+          trace="column",
+          main="gastroc",
+          lmat=rbind(c(5,4), c(3,2), c(0,1)),
+          lhei=c(2.2,4,0.2))
 
-heatmap.2(DESeq2::rlog(as.matrix(counts.gastroc.top)), 
-          col=rev(morecols(50)),
-          # trace="column", 
-          main="Top 1000 most variable\n genes across samples",
+heatmap.2(log2(as.matrix(counts.soleus.top + 1)), 
           labRow = FALSE,
-          ColSideColors=col.cell,scale="row")
+          col=rev(morecols(50)),
+          ColSideColors=col.cell, scale="row",
+          trace="column",
+          main="soleus",
+          lmat=rbind(c(5,4), c(3,2), c(0,1)),
+          lhei=c(2.2,4,0.2))
 ```
 
 
 
-### gastroc
+
+# PCA
+
+## gastroc
 
 the pca is performed on the raw data (not z-scored)
 => Thus using the `scale.=T` argument
@@ -331,7 +378,7 @@ plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.s
 plt
 ```
 
-### soleus
+## soleus
 
 ```{r message=FALSE}
 pca <- prcomp(t(counts.soleus.top), scale. = T)
@@ -341,13 +388,20 @@ pca.data <- data.frame(Sample = rownames(pca$x),
                        Y = pca$x[, 2]) %>%
   mutate(type = substr(Sample, 1,2))
 
-plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+plt <-
+  autoplot(
+    pca,
+    data = pca.data,
+    colour = 'type',
+    label.repel = TRUE,
+    label.show.legend = FALSE
+  ) +
   ggtitle("PCA soleus")
 # ggsave(filename = "./plots/04_pca_soleus_filtered.png", plt, dpi=300)
 plt
 ```
 
-### both tissues
+## both tissues
 
 ```{r message=FALSE}
 # combine both count tables
@@ -372,9 +426,9 @@ plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.s
 plt
 ```
 
-## DESeq
+# DESeq
 
-### gastroc
+## gastroc
 
 ```{r message=FALSE, warning=FALSE}
 # select sample columns
@@ -396,7 +450,7 @@ plotMA(dds.gastroc)
 # res <- results(ddsDE)
 ```
 
-### soleus
+## soleus
 
 ```{r message=FALSE, warning=FALSE}
 # select sample columns
@@ -425,3 +479,7 @@ saveRDS(counts.soleus, file = "./data/Robjects/counts.soleus.rds")
 save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
 ```
 
+
+
+# Final Questions
+* which heatmap function should I use and what should I change about the plots?
