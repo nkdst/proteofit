@@ -1,0 +1,104 @@
+---
+title: "Annotation"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+# library(ggplot2)
+library(biomaRt)  # DB source for
+# library(DESeq2)
+library(stringr)
+```
+
+# data
+
+```{r}
+counts.gastroc <- readRDS("./data/Robjects/counts.gastroc.rds")
+counts.soleus <- readRDS("./data/Robjects/counts.soleus.rds")
+```
+
+
+# setting up connection to DB
+
+## Select BioMart database and dataset
+
+```{r connect}
+# view the available databases
+listMarts()
+## set up connection to ensembl database
+ensembl=useMart("ENSEMBL_MART_ENSEMBL")
+# list the available datasets (species)
+listDatasets(ensembl) %>% 
+    filter(str_detect(description, "Mouse"))
+# specify a data set to use
+ensembl = useDataset("mmusculus_gene_ensembl", mart=ensembl)
+```
+
+## Query the database
+
+* **filters** - Ensembl Gene IDs
+* **values** - the Ensembl Gene IDs from our DE results table
+* **attributes**
+
+### explore filter types
+
+```{r queryBioMart, message=F}
+# check the available "filters" - things you can filter for
+listFilters(ensembl) %>% 
+    filter(str_detect(name, "ensembl"))
+# Set the filter type and values
+filterValues <- rownames(counts.gastroc)[1:1000]
+# check the available "attributes" - things you can retrieve
+listAttributes(ensembl)
+```
+
+
+
+
+*  multiple Entrez IDs for a single Ensembl 
+
+
+## Retrieve full annotation
+
+```{r solutionChallenge1}
+filterValues <- rownames(counts.gastroc)
+filterType <- "ensembl_gene_id"
+# check the available "attributes" - things you can retreive
+listAttributes(ensembl) %>%
+    head(20)
+attributeNames <- c('ensembl_gene_id',
+                    'entrezgene_id',
+                    'external_gene_name',
+                    'description',
+                    'gene_biotype',
+                    'chromosome_name',
+                    'start_position',
+                    'end_position',
+                    'strand')
+# run the query
+annot <- getBM(attributes=attributeNames,
+               filters = filterType,
+               values = filterValues,
+               mart = ensembl)
+# duplicate ids
+sum(duplicated(annot$ensembl_gene_id))
+# missing gens
+missingGenes <- !rownames(counts.gastroc)%in%annot$ensembl_gene_id
+rownames(counts.gastroc)[missingGenes]
+```
+
+
+
+
+
+```{r}
+save(annot, file = "./data/Robjects/02_annot.RData")
+```
+

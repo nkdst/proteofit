@@ -1,0 +1,131 @@
+---
+title: "GSEA analysis"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(fgsea)
+library(DESeq2)
+```
+
+
+
+```{r}
+# load("./data/Robjects/Annotated_Results_LvV.RData")
+# load("./data/Robjects/Ensembl_annotations.RData")
+# load("./data/Robjects/DE.RData")
+load("./data/Robjects/01_DDS.RData")
+load("./data/Robjects/02_annot.RData")
+
+annot <- dplyr::rename(annot, GeneID=ensembl_gene_id)
+```
+
+
+# creating ranks
+
+```{r}
+res.gastroc <- results(dds.gastroc, alpha=0.05)
+res.soleus <- results(dds.soleus, alpha=0.05)
+head(res.gastroc)
+head(res.soleus)
+```
+
+
+```{r}
+gastroc <- readr::read_tsv("./data/readcount_genename_gastroc.xls") %>%
+  tibble::column_to_rownames(var = "gene_id")
+
+# renaming
+gastroc <-
+  as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  dplyr::rename(logFC=log2FoldChange, FDR=padj) %>%
+  left_join(annot, "GeneID")
+
+soleus <-
+  as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  dplyr::rename(logFC=log2FoldChange, FDR=padj) %>%
+  left_join(annot, "GeneID")
+```
+
+
+```{r}
+gseaDat.gastroc <- filter(gastroc, !is.na(entrezgene_id))
+ranks.gastroc <- gseaDat.gastroc$logFC
+names(ranks.gastroc) <- gseaDat.gastroc$entrezgene_id
+
+
+gseaDat.soleus <- filter(soleus, !is.na(entrezgene_id))
+ranks.soleus <- gseaDat.soleus$logFC
+names(ranks.soleus) <- gseaDat.soleus$entrezgene_id
+```
+
+
+```{r}
+barplot(sort(ranks.gastroc, decreasing = T))
+barplot(sort(ranks.soleus, decreasing = T))
+```
+
+# load pathways
+Pathways are provided by http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp
+
+for now only the hallmark genes are being used
+```{r}
+# load("./data/Robjects/mouse_H_v5.RData")
+MH <- qusage::read.gmt("./data/mh.all.v2022.1.Mm.entrez.gmt")
+```
+
+
+```{r }
+fgseaRes <- fgsea(pathways = MH, 
+                  stats    = ranks.gastroc,
+                  minSize  = 15,
+                  maxSize  = 500)
+```
+
+
+
+```{r}
+head(fgseaRes[order(padj, -abs(NES)), ], n=10)
+```
+
+## Enrichment score plot
+
+
+```{r}
+plotEnrichment(MH[["HALLMARK_ALLOGRAFT_REJECTION"]], ranks.gastroc)
+```
+
+
+
+## GSEA table plot
+
+```{r}
+topUp <- fgseaRes %>% 
+    filter(ES > 0) %>% 
+    top_n(10, wt=-padj)
+topDown <- fgseaRes %>% 
+    filter(ES < 0) %>% 
+    top_n(10, wt=-padj)
+topPathways <- bind_rows(topUp, topDown) %>% 
+    arrange(-ES)
+# topPathways <- c(topUp, rev(topDown))
+
+e <- plotGseaTable(
+  pathways = MH[topPathways$pathway],
+  stats = ranks.gastroc,
+  fgseaRes = fgseaRes,
+  gseaParam = 0.5
+)
+e
+```
+

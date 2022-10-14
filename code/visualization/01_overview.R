@@ -11,12 +11,12 @@
 ## --------------------------- ##
 
 
-## libraries
+# libraries ----
 library(ggplot2)
 library(treemap)
 library(dplyr)
 
-## including other file(s)
+# including other file(s) ----
 source("code/load_data.R")
 
 
@@ -29,7 +29,7 @@ gene_biotypes <- table(counts.gastroc$gene_biotype) %>%
 gene_biotypes[,gene_biotypes$Freq > 100]
 
 
-## treemap
+# treemap ----
 treemap::treemap(gene_biotypes,
                  index = "Var1",
                  vSize = "Freq",
@@ -42,15 +42,15 @@ treemap::treemap(gene_biotypes,
 #   mutate(Species.Index=paste(Species, Sum.Sepal.Length, sep ="\n"))%>%
 #   treemap(index="Species.Index", vSize="Sum.Sepal.Length")
 
-## bar plots
-# gene types
+# bar plots ----
+## gene types ----
 ggplot(gene_biotypes, aes(x = reorder(Var1, -Freq), y = Freq)) +
   geom_bar(stat = "identity") +
   theme(axis.text.x=element_text(color = "black", angle=90, vjust=.8, hjust=0.8)) + 
   labs(x = "gene biotype", y = "frequency")
 
 
-# count table matrices
+# count table matrices ----
 counts.gastroc.m <- counts.gastroc[, 1:13] %>%
   t() %>%
   janitor::row_to_names(row_number = 1)
@@ -60,10 +60,12 @@ total_readcounts.gastroc <- colSums(counts.gastroc[, 2:13]) %>%
   rename(reads = ".") %>%
   tibble::rownames_to_column()
 
-# total read counts
+# total read counts ----
 ggplot(total_readcounts.gastroc, aes(x = rowname, y = reads)) +
   geom_bar(stat = "identity") +
   theme(axis.text.x=element_text(color = "black", angle=45, vjust=.8, hjust=0.8)) + 
   labs(x = "sample", y = "reads", title = "total read counts gastroc")
 
 
+# ubiquitomics ----
+uq_annot <- readxl::read_xlsx("./data/Ubiquitomics/210928_IL_56_Ubiquitomics test 2.0_annotation.xlsx")

@@ -1,0 +1,427 @@
+---
+title: "FirstAnalysis"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    df_print: paged
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(treemap)
+library(DESeq2)
+library(ggfortify) # autoplot (PCA)
+# library(gridExtra)
+library(ggpubr)
+```
+
+## Overview
+
+## Preparing data
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gastroc <- readr::read_tsv("./data/readcount_genename_gastroc.xls") %>%
+  tibble::column_to_rownames(var = "gene_id")
+counts.gastroc <- gastroc[, 1:12]
+
+soleus <- readr::read_tsv("./data/readcount_genename_soleus.xls") %>%
+  tibble::column_to_rownames(var = "gene_id")
+counts.soleus <- soleus[, 1:12]
+
+```
+
+### Treemap
+
+both counts have the same genes analysed
+
+```{r}
+gene_biotypes <- table(gastroc$gene_biotype) %>%
+  as.data.frame() %>%
+  arrange(desc(Freq))
+
+treemap::treemap(gene_biotypes,
+                 index = "Var1",
+                 vSize = "Freq",
+                 title = "Gene biotypes")
+```
+
+## Filtering
+
+### Overview
+
+For a broad overview all genes with `rowSums() < 10` will be displayed. This is usually similar to omitting genes with zero counts of more than 30%
+
+```{r}
+rs.gastroc <- rowSums(counts.gastroc) %>%
+  as.data.frame() %>%
+  dplyr::rename("rowSums" = ".")
+n.omit.gastroc <- sum(rs.gastroc < 10)
+title <- paste0("rowSums low expressed genes, gastroc \n",
+                n.omit.gastroc, " genes will be omitted (~",
+                floor(n.omit.gastroc / nrow(rs.gastroc) * 100), " %)")
+
+p.gastroc <- filter(rs.gastroc, rowSums < 20) %>%
+  ggplot(., aes(x=rowSums))+
+  geom_histogram(color="black", fill="white")+
+  geom_vline(aes(xintercept=10, color="red"),
+             linetype="dashed") +
+  ggtitle(title) + 
+  theme(legend.position = "none")
+
+# ---
+rs.soleus <- rowSums(counts.soleus) %>%
+  as.data.frame() %>%
+  dplyr::rename("rowSums" = ".")
+n.omit.soleus <- sum(rs.soleus < 10)
+title <- paste0("rowSums low expressed genes, soleus \n",
+                n.omit.soleus, " genes will be omitted (~",
+                floor(n.omit.gastroc / nrow(rs.gastroc) * 100), " %)")
+
+p.soleus <- filter(rs.soleus, rowSums < 20) %>%
+  ggplot(., aes(x=rowSums))+
+  geom_histogram(color="black", fill="white")+
+  geom_vline(aes(xintercept=10, color="red"),
+             linetype="dashed") +
+  ggtitle(title)+ 
+  theme(legend.position = "none")
+
+p.gastroc
+p.soleus
+
+```
+
+### omitting genes (actual filtering)
+
+omitting genes with zero counts in more than 30% of the samples
+
+```{r echo=FALSE}
+omitZeroCounts <- function(counts.raw, share=0.3) {
+  keep <- (counts.raw != 0) %>%
+    rowSums() > round(share * ncol(counts.raw))
+  return(counts.raw[keep,])
+}
+
+counts.gastroc <- omitZeroCounts(counts.gastroc)
+counts.soleus <- omitZeroCounts(counts.soleus)
+```
+
+## Quality assessment
+
+### (Library sizes)
+
+-   too many zero counts
+-   different total counts
+
+```{r}
+plot.library_size <- function(counts, title="") {
+  cs <- colSums(counts) %>%
+    as.data.frame() %>%
+    dplyr::rename("colsums" = ".") %>%
+    tibble::rownames_to_column(var = "sample")
+  
+  ggplot(cs, aes(x = sample, y = colsums)) +
+    geom_bar(stat = "identity") +
+    theme(axis.text.x=element_text(color = "black", angle=45, vjust=.8, hjust=0.8)) + 
+    ggtitle(paste0("total counts, ", title))
+}
+
+
+plt.libsize.gastroc <- plot.library_size(counts.gastroc, title = "gastroc") +
+  ylim(0, 4e07)
+plt.libsize.soleus <- plot.library_size(counts.soleus, title = "soleus") +
+  ylim(0, 4e07)
+
+ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
+                    ncol = 1, nrow = 2)
+```
+
+### count distribution boxplots
+
+Preparing the sample by applying log2 and loading metadata files
+
+```{r echo=FALSE, message=FALSE}
+logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
+logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
+
+metadata.gastroc <- readr::read_csv2("./data/sample_table_gastroc.csv") %>%
+  tibble::column_to_rownames("run")
+metadata.soleus <- readr::read_csv2("./data/sample_table_soleus.csv") %>%
+  tibble::column_to_rownames("run")
+```
+
+
+Resulting Plots:
+
+```{r message=FALSE}
+plotBoxLog <- function(logcounts, metadata) {
+  stack(logcounts) %>%
+    merge(metadata, by.x = "ind", by.y = "sample_name") %>% 
+    ggplot( aes(x=ind, y=values, color=genotype)) +
+    geom_boxplot() + 
+    ylab("Log2(Counts)") +
+    xlab(element_blank()) +
+    theme(axis.text.x=element_text(angle=45, vjust=.8, hjust=0.8)) +
+    geom_hline(yintercept = median(as.matrix(logcounts.gastroc)), col="blue" )
+}
+
+p1 <- plotBoxLog(logcounts.gastroc, metadata.gastroc) + 
+  ggtitle("gastroc")
+p2 <- plotBoxLog(logcounts.soleus, metadata.soleus) + 
+  ggtitle("soleus") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  rremove("ylab")
+```
+
+
+```{r echo=FALSE, message=FALSE}
+pdf(NULL) # avoiding blank plot created by ggarrange
+p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
+x = dev.off()  # see above
+p
+```
+
+
+
+### using DESeq2::rlog to normalize
+
+```{r message=FALSE}
+p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
+  as.data.frame() %>%
+  plotBoxLog(metadata.gastroc) + 
+  ggtitle("gastroc") +
+  ylab("rlog(counts)")
+
+p2 <- DESeq2::rlog(as.matrix(counts.soleus)) %>%
+  as.data.frame() %>%
+  plotBoxLog(metadata.soleus) + 
+  ggtitle("soleus") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  rremove("ylab")
+```
+
+
+```{r echo=FALSE, message=FALSE}
+pdf(NULL) # avoiding blank plot created by ggarrange
+p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
+x = dev.off()  # see above
+p
+```
+
+
+## PCA
+
+
+#### most variable genes (top 1000)
+
+-   applying z-score to then take the sd and filter for the top 1000
+
+$x -\frac{ mean(x)}{sd(x)}$
+
+```{r}
+mostVariableRows <- function(M, ntop=1000) {
+  s <- apply( M,1,sd )      # standard deviation
+  µ <- apply( M, 1, mean )  # mean
+  M.z <- (M - µ) / s         # zscore
+  
+  # sd ordered descending
+  sdev <- apply(counts.gastroc, 1, sd)
+  M.top <- M[order(sdev, decreasing = T)[1:1000] , ]
+  return(M.top)
+}
+
+counts.gastroc.top <- mostVariableRows(counts.gastroc)
+counts.soleus.top <- mostVariableRows(counts.soleus)
+```
+
+
+
+
+```{r}
+## Github & ComplexHeatmap ----
+if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
+  devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)
+  # BiocManager::install("ComplexHeatmap")
+}
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+# Get some nicer colours
+mypalette <- brewer.pal(11, "RdYlBu")
+# http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
+morecols <- colorRampPalette(mypalette)
+
+
+rlogcounts.gastroc.top <- DESeq2::rlog(as.matrix(counts.gastroc.top))
+
+chm <- Heatmap(
+    rlogcounts.gastroc.top,
+    row_title = "genes",
+    name = "rlog",
+    show_row_names = FALSE,
+    column_title = "samples",
+    col = rev(morecols(50)),
+    column_title_side = "bottom"
+    # row_dend_side = "right",
+  )
+
+# chm
+png(
+  "./code/analysis/01_CHM.png",
+  width = 10,
+  height = 7.5,
+  res = 150,
+  units = "in"
+)
+draw(chm)
+dev.off()
+
+```
+![](./code/analysis/01_CHM.png)
+
+
+
+```{r}
+library(gplots)
+
+# Set up colour vector for celltype variable
+col.cell <- rep(c("purple"), 12)
+col.cell[metadata.gastroc$genotype == "KO"] = "orange"
+
+heatmap.2(DESeq2::rlog(as.matrix(counts.gastroc.top)), 
+          col=rev(morecols(50)),
+          trace="column", 
+          main="Top 1000 most variable\n genes across samples",
+          labRow = FALSE,
+          ColSideColors=col.cell,scale="row")
+
+heatmap.2(DESeq2::rlog(as.matrix(counts.gastroc.top)), 
+          col=rev(morecols(50)),
+          # trace="column", 
+          main="Top 1000 most variable\n genes across samples",
+          labRow = FALSE,
+          ColSideColors=col.cell,scale="row")
+```
+
+
+
+### gastroc
+
+the pca is performed on the raw data (not z-scored)
+=> Thus using the `scale.=T` argument
+
+```{r message=FALSE}
+pca <- prcomp(t(counts.gastroc.top), scale. = T)
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                       X = pca$x[, 1],
+                       Y = pca$x[, 2]) %>%
+  mutate(type = substr(Sample, 1,2))
+
+plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+  ggtitle("PCA gastroc")
+# ggsave(filename = "./plots/04_pca_gastroc_filtered.png", plt, dpi=300)
+plt
+```
+
+### soleus
+
+```{r message=FALSE}
+pca <- prcomp(t(counts.soleus.top), scale. = T)
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                       X = pca$x[, 1],
+                       Y = pca$x[, 2]) %>%
+  mutate(type = substr(Sample, 1,2))
+
+plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+  ggtitle("PCA soleus")
+# ggsave(filename = "./plots/04_pca_soleus_filtered.png", plt, dpi=300)
+plt
+```
+
+### both tissues
+
+```{r message=FALSE}
+# combine both count tables
+
+counts <- merge(gastroc[, 1:12], soleus[, 1:12], by=0, suffixes = c("_GA", "_SO")) %>%
+  tibble::column_to_rownames("Row.names")
+
+# filter out low expressed genes
+keep <- rowSums(counts) >= 10
+counts <- counts[keep,]
+
+pca <- prcomp(t(counts), scale. = T)
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                       X = pca$x[, 1],
+                       Y = pca$x[, 2]) %>%
+  mutate( type = paste( substr(Sample, 1,2), stringr::str_sub(Sample, -2) ) )
+
+plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+  ggtitle("PCA both tissues")
+# ggsave(filename = "./plots/04_pca_both_tissues_filtered.png", plt, dpi=300)
+plt
+```
+
+## DESeq
+
+### gastroc
+
+```{r message=FALSE, warning=FALSE}
+# select sample columns
+reorder_index <- match(rownames(metadata.gastroc), colnames(counts.gastroc))
+counts.gastroc <- counts.gastroc[,reorder_index]
+
+# Check metadata consistency
+b <- all(rownames(metadata.gastroc) %in% colnames(counts.gastroc)) %>%
+  assertthat::assert_that(., msg = "metadata and count table do not match")
+
+## DESeq2 object for  tissue, for paired analysis use patient
+dds.gastroc <- DESeqDataSetFromMatrix(countData =  counts.gastroc,
+                              colData =  metadata.gastroc,
+                              design = ~ genotype)
+
+# main DESeq
+dds.gastroc <- DESeq(dds.gastroc)
+plotMA(dds.gastroc)
+# res <- results(ddsDE)
+```
+
+### soleus
+
+```{r message=FALSE, warning=FALSE}
+# select sample columns
+reorder_index <- match(rownames(metadata.soleus), colnames(counts.soleus))
+counts.soleus <- counts.soleus[,reorder_index]
+
+# Check metadata consistency
+b <- all(rownames(metadata) %in% colnames(counts.soleus)) %>%
+  assertthat::assert_that(., msg = "metadata and count table do not match")
+
+## DESeq2 object for  tissue, for paired analysis use patient
+dds.soleus <- DESeqDataSetFromMatrix(countData =  counts.soleus,
+                              colData =  metadata.soleus,
+                              design = ~ genotype)
+
+# main DESeq
+dds.soleus <- DESeq(dds.soleus)
+plotMA(dds.soleus)
+```
+
+# save R ojects
+
+```{r}
+saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
+saveRDS(counts.soleus, file = "./data/Robjects/counts.soleus.rds")
+save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
+```
+
