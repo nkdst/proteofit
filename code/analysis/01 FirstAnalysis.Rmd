@@ -154,6 +154,9 @@ ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
                     ncol = 1, nrow = 2)
 ```
 
+not sure what to make of this, but its there.
+
+
 ### count distribution boxplots
 
 Preparing the sample by applying log2 and loading metadata files
@@ -332,8 +335,8 @@ I thought both packages use `hclust()`. Not sure yet what is the difference.
 
 ```{r}
 # Set up colour vector for celltype variable
-col.cell <- rep(c("purple"), 12)
-col.cell[metadata.gastroc$genotype == "KO"] = "orange"
+col.cell <- rep(c("#00C3C6"), 12)
+col.cell[metadata.gastroc$genotype == "KO"] = "#FF6C67"
 
 heatmap.2(log2(as.matrix(counts.gastroc.top + 1)),
           labRow = FALSE,
@@ -362,7 +365,7 @@ heatmap.2(log2(as.matrix(counts.soleus.top + 1)),
 ## gastroc
 
 the pca is performed on the raw data (not z-scored)
-=> Thus using the `scale.=T` argument
+=> Thus using the `scale.=T` argument?
 
 ```{r message=FALSE}
 pca <- prcomp(t(counts.gastroc.top), scale. = T)
@@ -372,7 +375,13 @@ pca.data <- data.frame(Sample = rownames(pca$x),
                        Y = pca$x[, 2]) %>%
   mutate(type = substr(Sample, 1,2))
 
-plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+plt <-
+  autoplot(
+    pca,
+    data = pca.data,
+    colour = 'type',
+    label.show.legend = FALSE
+  ) +
   ggtitle("PCA gastroc")
 # ggsave(filename = "./plots/04_pca_gastroc_filtered.png", plt, dpi=300)
 plt
@@ -393,7 +402,7 @@ plt <-
     pca,
     data = pca.data,
     colour = 'type',
-    label.repel = TRUE,
+    shape = 17,
     label.show.legend = FALSE
   ) +
   ggtitle("PCA soleus")
@@ -405,22 +414,29 @@ plt
 
 ```{r message=FALSE}
 # combine both count tables
-
-counts <- merge(gastroc[, 1:12], soleus[, 1:12], by=0, suffixes = c("_GA", "_SO")) %>%
+counts.both <-
+  merge(counts.gastroc,
+        counts.soleus,
+        by = 0,
+        suffixes = c("_gastroc", "_soleus")) %>%
   tibble::column_to_rownames("Row.names")
 
-# filter out low expressed genes
-keep <- rowSums(counts) >= 10
-counts <- counts[keep,]
-
-pca <- prcomp(t(counts), scale. = T)
+pca <- prcomp(t(counts.both), scale. = T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
                        X = pca$x[, 1],
                        Y = pca$x[, 2]) %>%
-  mutate( type = paste( substr(Sample, 1,2), stringr::str_sub(Sample, -2) ) )
+  mutate(type = substr(Sample, 1, 2),
+         tissue = stringr::str_extract(Sample,"[:alpha:]+$"))
 
-plt <- autoplot(pca, data = pca.data, colour = 'type', label.repel=TRUE, label.show.legend=FALSE) +
+plt <-
+  autoplot(
+    pca,
+    data = pca.data,
+    colour = 'type',
+    shape = 'tissue',
+    label.show.legend = FALSE
+  ) +
   ggtitle("PCA both tissues")
 # ggsave(filename = "./plots/04_pca_both_tissues_filtered.png", plt, dpi=300)
 plt
@@ -482,4 +498,13 @@ save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
 
 
 # Final Questions
+Most variable genes:
+
 * which heatmap function should I use and what should I change about the plots?
+* should I include the traces?
+* should I completely omit the heatmaps (visualizsation of most variable genes?)
+
+PCA:
+
+* I was not sure anymore if the PCA should be performed with normalized or not normalized counts? (Last week I thought we said not normalized, but today I think you said normalized?) Just want to double check, sorry.
+* if the data is not normalized, does it mean to then use the `scale=T` argument?
