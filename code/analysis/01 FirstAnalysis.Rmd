@@ -49,7 +49,8 @@ counts.soleus <- soleus[, 1:12]
 
 ## Treemap
 
-both counts have the same genes analysed
+Both counts have the same genes analysed.
+These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
 
 ```{r}
 gene_biotypes <- table(gastroc$gene_biotype) %>%
@@ -444,48 +445,127 @@ plt
 
 # DESeq
 
-## gastroc
+## preparing DDS objects
 
 ```{r message=FALSE, warning=FALSE}
-# select sample columns
-reorder_index <- match(rownames(metadata.gastroc), colnames(counts.gastroc))
-counts.gastroc <- counts.gastroc[,reorder_index]
+createDDSObject <- function(counts, metadata) {
+  # select sample columns
+  reorder_index <- match(rownames(metadata), colnames(counts))
+  counts <- counts[,reorder_index]
+  
+  # Check metadata consistency
+  all(rownames(metadata) %in% colnames(counts)) %>%
+    assertthat::assert_that(., msg = "metadata and count table do not match")
+  
+  ## DESeq2 object
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = metadata,
+                                design = ~ genotype)
+  return( DESeq(dds) )
+}
 
-# Check metadata consistency
-b <- all(rownames(metadata.gastroc) %in% colnames(counts.gastroc)) %>%
-  assertthat::assert_that(., msg = "metadata and count table do not match")
-
-## DESeq2 object for  tissue, for paired analysis use patient
-dds.gastroc <- DESeqDataSetFromMatrix(countData =  counts.gastroc,
-                              colData =  metadata.gastroc,
-                              design = ~ genotype)
-
-# main DESeq
-dds.gastroc <- DESeq(dds.gastroc)
-plotMA(dds.gastroc)
-# res <- results(ddsDE)
+# creating DESeq Objects
+dds.gastroc <- createDDSObject(counts.gastroc, metadata.gastroc)
+dds.soleus <- createDDSObject(counts.soleus, metadata.soleus)
 ```
 
-## soleus
+## MA-Plots
+
+### gastroc
 
 ```{r message=FALSE, warning=FALSE}
-# select sample columns
-reorder_index <- match(rownames(metadata.soleus), colnames(counts.soleus))
-counts.soleus <- counts.soleus[,reorder_index]
+plotMA(dds.gastroc)
+```
 
-# Check metadata consistency
-b <- all(rownames(metadata) %in% colnames(counts.soleus)) %>%
-  assertthat::assert_that(., msg = "metadata and count table do not match")
 
-## DESeq2 object for  tissue, for paired analysis use patient
-dds.soleus <- DESeqDataSetFromMatrix(countData =  counts.soleus,
-                              colData =  metadata.soleus,
-                              design = ~ genotype)
+### soleus
 
-# main DESeq
-dds.soleus <- DESeq(dds.soleus)
+```{r message=FALSE, warning=FALSE}
 plotMA(dds.soleus)
 ```
+
+## Dispersion Estimates
+
+### gastroc
+
+```{r}
+plotDispEsts(dds.gastroc)
+```
+
+### soleus
+
+```{r}
+plotDispEsts(dds.soleus)
+```
+
+## Results
+
+```{r}
+res.gastroc <- results(dds.gastroc, alpha = 0.05)
+res.soleus <- results(dds.soleus, alpha = 0.05)
+
+
+head(res.gastroc)
+head(res.soleus)
+```
+
+### top significant diff. genes
+
+```{r}
+topGenes.gastroc <- as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+topGenes.soleus <- as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+knitr::kable(head(topGenes.gastroc), caption = "gastroc")
+knitr::kable(head(topGenes.soleus), caption = "soleus")
+```
+### p-values
+
+```{r}
+hist(res.gastroc$pvalue, main = "gastroc")
+hist(res.soleus$pvalue, main = "soleus")
+```
+
+### shrinking
+Is shrinking necessary?
+
+[] watch the course video
+
+
+
+
+## Volcano Plot
+
+```{r}
+resTab.gastroc <- as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  # left_join(ensemblAnnot, by = "GeneID") %>% 
+  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
+  mutate(`-log10(pvalue)` = -log10(pvalue))
+
+resTab.soleus <- as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  # left_join(ensemblAnnot, by = "GeneID") %>% 
+  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>% 
+  mutate(`-log10(pvalue)` = -log10(pvalue))
+```
+
+```{r}
+ggplot(resTab.gastroc, aes(x = logFC, y = `-log10(pvalue)`)) +
+  geom_point(aes(colour = FDR < 0.05), size = 1) +
+  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
+
+ggplot(resTab.soleus, aes(x = logFC, y = `-log10(pvalue)`)) +
+  geom_point(aes(colour = FDR < 0.05), size = 1) +
+  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
+```
+
 
 # save R ojects
 
@@ -508,3 +588,7 @@ PCA:
 
 * I was not sure anymore if the PCA should be performed with normalized or not normalized counts? (Last week I thought we said not normalized, but today I think you said normalized?) Just want to double check, sorry.
 * if the data is not normalized, does it mean to then use the `scale=T` argument?
+
+DESeq:
+
+* is shrinking necessary? (`lfcShrink`)
