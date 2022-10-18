@@ -1,10 +1,11 @@
 ---
-title: "FirstAnalysis"
+title: "01 FirstAnalysis"
 author: "Nick Diercksen"
 output:
   html_notebook:
     code_folding: hide
     toc: yes
+    toc_float: yes
     df_print: paged
 editor_options: 
   chunk_output_type: inline
@@ -30,18 +31,20 @@ library(ComplexHeatmap)
 library(circlize)
 library(RColorBrewer)
 library(gplots) # (heatmap.2)
+library(SummarizedExperiment)
 ```
 
 # Overview
 
 ## Preparing data
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-gastroc <- readr::read_tsv("./data/readcount_genename_gastroc.xls") %>%
+```{r}
+gastroc <- readr::read_tsv("./data/counts/readcount_genename_gastroc.xls", show_col_types = F) %>%
   tibble::column_to_rownames(var = "gene_id")
 counts.gastroc <- gastroc[, 1:12]
 
-soleus <- readr::read_tsv("./data/readcount_genename_soleus.xls") %>%
+# TODO: fix annotations: several entries are incomplete whereas the gastroc seems to be complete
+soleus <- readr::read_tsv("./data/counts/readcount_genename_soleus.xls", show_col_types = F) %>%
   tibble::column_to_rownames(var = "gene_id")
 counts.soleus <- soleus[, 1:12]
 
@@ -166,9 +169,9 @@ Preparing the sample by applying log2 and loading metadata files
 logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
 logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
 
-metadata.gastroc <- readr::read_csv2("./data/sample_table_gastroc.csv") %>%
+metadata.gastroc <- readr::read_csv2("./data/counts/sample_table_gastroc.csv") %>%
   tibble::column_to_rownames("run")
-metadata.soleus <- readr::read_csv2("./data/sample_table_soleus.csv") %>%
+metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
   tibble::column_to_rownames("run")
 ```
 
@@ -412,12 +415,13 @@ plt
 ```
 
 ## both tissues
+Here also taking the top 1000 most variable genes of each tissue and merging them.
 
 ```{r message=FALSE}
 # combine both count tables
 counts.both <-
-  merge(counts.gastroc,
-        counts.soleus,
+  merge(counts.gastroc.top,
+        counts.soleus.top,
         by = 0,
         suffixes = c("_gastroc", "_soleus")) %>%
   tibble::column_to_rownames("Row.names")
@@ -443,152 +447,52 @@ plt <-
 plt
 ```
 
-# DESeq
 
-## preparing DDS objects
+# cleaning up
 
-```{r message=FALSE, warning=FALSE}
-createDDSObject <- function(counts, metadata) {
-  # select sample columns
-  reorder_index <- match(rownames(metadata), colnames(counts))
-  counts <- counts[,reorder_index]
-  
-  # Check metadata consistency
-  all(rownames(metadata) %in% colnames(counts)) %>%
-    assertthat::assert_that(., msg = "metadata and count table do not match")
-  
-  ## DESeq2 object
-  dds <- DESeqDataSetFromMatrix(countData = counts,
-                                colData = metadata,
-                                design = ~ genotype)
-  return( DESeq(dds) )
-}
+## SE
+```{r SummarizedExperiment}
+# ordering data.frames by rowname
+gastroc <- gastroc[order(rownames(gastroc)),]
+soleus <- soleus[order(rownames(soleus)),]
 
-# creating DESeq Objects
-dds.gastroc <- createDDSObject(counts.gastroc, metadata.gastroc)
-dds.soleus <- createDDSObject(counts.soleus, metadata.soleus)
+# rowData
+rowdata <- gastroc[, 13:21]
+rowdata$gastroc.filtered = rownames(rowdata) %in% rownames(counts.gastroc)
+rowdata$soleus.filtered  = rownames(rowdata) %in% rownames(counts.soleus)
+
+se <- SummarizedExperiment(
+  assays = list("gastroc" = gastroc[, 1:12], "soleus" = soleus[, 1:12]),
+  rowData = rowdata,
+  colData = metadata.gastroc[, 3, drop=F] # only genotype is available as information
+)
 ```
 
-## MA-Plots
-
-### gastroc
-
-```{r message=FALSE, warning=FALSE}
-plotMA(dds.gastroc)
+the filtered assays can be accessed as following:
+```{r SE-filter, eval=FALSE}
+df <- se[rowData(se)$gastroc.filtered,] %>% assays() %>% .$gastroc
 ```
 
-
-### soleus
-
-```{r message=FALSE, warning=FALSE}
-plotMA(dds.soleus)
-```
-
-## Dispersion Estimates
-
-### gastroc
-
-```{r}
-plotDispEsts(dds.gastroc)
-```
-
-### soleus
-
-```{r}
-plotDispEsts(dds.soleus)
-```
-
-## Results
-
-```{r}
-res.gastroc <- results(dds.gastroc, alpha = 0.05)
-res.soleus <- results(dds.soleus, alpha = 0.05)
-
-
-head(res.gastroc)
-head(res.soleus)
-```
-
-### top significant diff. genes
-
-```{r}
-topGenes.gastroc <- as.data.frame(res.gastroc) %>%
-  tibble::rownames_to_column("GeneID") %>%
-  top_n(100, wt = -padj) %>%
-  arrange(padj)
-
-topGenes.soleus <- as.data.frame(res.soleus) %>%
-  tibble::rownames_to_column("GeneID") %>%
-  top_n(100, wt = -padj) %>%
-  arrange(padj)
-
-knitr::kable(head(topGenes.gastroc), caption = "gastroc")
-knitr::kable(head(topGenes.soleus), caption = "soleus")
-```
-### p-values
-
-```{r}
-hist(res.gastroc$pvalue, main = "gastroc")
-hist(res.soleus$pvalue, main = "soleus")
-```
-
-### shrinking
-Is shrinking necessary?
-
-[] watch the course video
-
-
-
-
-## Volcano Plot
-
-```{r}
-resTab.gastroc <- as.data.frame(res.gastroc) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  # left_join(ensemblAnnot, by = "GeneID") %>% 
-  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
-  mutate(`-log10(pvalue)` = -log10(pvalue))
-
-resTab.soleus <- as.data.frame(res.soleus) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  # left_join(ensemblAnnot, by = "GeneID") %>% 
-  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>% 
-  mutate(`-log10(pvalue)` = -log10(pvalue))
-```
-
-```{r}
-ggplot(resTab.gastroc, aes(x = logFC, y = `-log10(pvalue)`)) +
-  geom_point(aes(colour = FDR < 0.05), size = 1) +
-  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
-
-ggplot(resTab.soleus, aes(x = logFC, y = `-log10(pvalue)`)) +
-  geom_point(aes(colour = FDR < 0.05), size = 1) +
-  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
-```
-
-
-# save R ojects
+## save R Objects
 
 ```{r}
 saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
-saveRDS(counts.soleus, file = "./data/Robjects/counts.soleus.rds")
+saveRDS(counts.soleus,  file = "./data/Robjects/counts.soleus.rds")
+saveRDS(se,             file = "./data/Robjects/01_se.rds")
+
 save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
 ```
 
 
 
-# Final Questions
+# Questions
 Most variable genes:
 
 * which heatmap function should I use and what should I change about the plots?
 * should I include the traces?
-* should I completely omit the heatmaps (visualizsation of most variable genes?)
+* should I completely omit the heatmaps (visualisation of most variable genes?)
 
 PCA:
 
 * I was not sure anymore if the PCA should be performed with normalized or not normalized counts? (Last week I thought we said not normalized, but today I think you said normalized?) Just want to double check, sorry.
 * if the data is not normalized, does it mean to then use the `scale=T` argument?
-
-DESeq:
-
-* is shrinking necessary? (`lfcShrink`)

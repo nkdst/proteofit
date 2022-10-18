@@ -1,9 +1,11 @@
 ---
-title: "Annotation"
+title: "02 Annotation"
 author: "Nick Diercksen"
 output:
   html_notebook:
     toc: yes
+    toc_float: yes
+    df_print: paged
 editor_options: 
   chunk_output_type: inline
 ---
@@ -11,17 +13,21 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
-# library(ggplot2)
-library(biomaRt)  # DB source for
-# library(DESeq2)
+library(biomaRt)  # interface to a collection of databases
 library(stringr)
+library(SummarizedExperiment)
 ```
 
-# data
+# About
+This step is a preparation for the following pathway enrichment (gene set 
+enrichment with `fgsea`). To link the genes with the pathways the "entrezgene_id"
+is needed. Thus in this step, the `biomaRt` interface is used to access the 
+corresponding DBs.
+
+# read in data
 
 ```{r}
-counts.gastroc <- readRDS("./data/Robjects/counts.gastroc.rds")
-counts.soleus <- readRDS("./data/Robjects/counts.soleus.rds")
+se <- readRDS("./data/Robjects/01_se.rds")
 ```
 
 
@@ -43,20 +49,14 @@ ensembl = useDataset("mmusculus_gene_ensembl", mart=ensembl)
 
 ## Query the database
 
-* **filters** - Ensembl Gene IDs
-* **values** - the Ensembl Gene IDs from our DE results table
-* **attributes**
-
 ### explore filter types
 
 ```{r queryBioMart, message=F}
 # check the available "filters" - things you can filter for
 listFilters(ensembl) %>% 
     filter(str_detect(name, "ensembl"))
-# Set the filter type and values
-filterValues <- rownames(counts.gastroc)[1:1000]
 # check the available "attributes" - things you can retrieve
-listAttributes(ensembl)
+listAttributes(ensembl) %>% head(40)
 ```
 
 
@@ -67,12 +67,13 @@ listAttributes(ensembl)
 
 ## Retrieve full annotation
 
-```{r solutionChallenge1}
-filterValues <- rownames(counts.gastroc)
+* **values** - the Ensembl Gene IDs from our DE results table
+* **attributes** - columns 
+
+```{r}
+# 
+filterValues <- rownames(se)
 filterType <- "ensembl_gene_id"
-# check the available "attributes" - things you can retreive
-listAttributes(ensembl) %>%
-    head(20)
 attributeNames <- c('ensembl_gene_id',
                     'entrezgene_id',
                     'external_gene_name',
@@ -87,18 +88,131 @@ annot <- getBM(attributes=attributeNames,
                filters = filterType,
                values = filterValues,
                mart = ensembl)
-# duplicate ids
-sum(duplicated(annot$ensembl_gene_id))
-# missing gens
-missingGenes <- !rownames(counts.gastroc)%in%annot$ensembl_gene_id
-rownames(counts.gastroc)[missingGenes]
 ```
 
 
+duplicate ids:
+```{r}
+sum(duplicated(annot$ensembl_gene_id))
+```
 
 
+missing genes:
+```{r}
+missingGenes <- !rownames(se) %in% annot$ensembl_gene_id
+rownames(se)[missingGenes] %>% head(20)
+```
+
+
+# consistency in the metadata (sanity checks)
+
+the metadata from the genes originates from tow sources:
+
+* already provided with the available counts
+* from biomart (Ensembl)
+
+The question is if both datasets are consistent with the data they provide.
+Inconsistencies can point to possible mistakes done when annotating.
+
+So before merging the new annotation data into the `se` to get the "entrezgene_id"
+to later do the pathway enrichment.
+
+```{r}
+df <- merge(annot, rowData(se), by.x = 1, by.y = 0) %>%
+  as.data.frame()
+```
+
+## biotypes:
+```{r}
+cols <- c("ensembl_gene_id","gene_biotype.x", "gene_biotype.y")
+dif_biotypes <- !df$gene_biotype.x == df$gene_biotype.y
+print(paste0("There are ", sum(dif_biotypes), " genes annotated with different biotypes"))
+df[(dif_biotypes),cols] %>% head(20)
+```
+
+## gene names
+```{r}
+cols <- c("ensembl_gene_id", "external_gene_name", "gene_name")
+dif_names <- !df$external_gene_name == df$gene_name
+print(paste0("There are ", sum(dif_names), " genes annotated with different gene names"))
+df[(dif_names), cols] %>% head(20)
+```
+
+## chromosome
+```{r}
+cols <- c("ensembl_gene_id", "chromosome_name", "gene_chr", "external_gene_name", "gene_name")
+df[(!df$chromosome_name == df$gene_chr), cols] %>% head(20)
+```
+
+Here we "only" have 2 genes annotated with different chromosomes, but this might
+be one of the more severe differences!
+
+**ENSMUSG00000065387** \\
+
+
+
+## gene positions
+-> start
+```{r}
+dif_start <- df$start_position - df$gene_start
+head(dif_start, 20)
+```
+
+total genes with the same start position
+```{r}
+sum(dif_start == 0)
+```
+
+```{r}
+hist(abs(dif_start), breaks = 100)
+```
+
+
+-> end
+```{r}
+dif_end <- df$end_position - df$gene_end
+head(dif_end, 20)
+```
+
+
+total genes with the same end position
+
+```{r}
+sum(dif_end == 0)
+```
+
+```{r}
+hist(abs(dif_end), breaks = 100)
+```
+
+## Discussion
+On the first glance, there are several inconsistencies with the two annotation
+sources.
+
+Biotypes: \\
+About a fifth of the genes is annotated with a different biotype. This has to be
+looked at more specifically though, since this could still be viable in the 
+biological sense.
+
+gene names: \\
+Not as many differences as the biotypes, but most of them seem to be synonyms:
+
+* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000002280;r=17:25992750-26002306
+* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000003527;r=16:17718573-17729212
+
+chromosomes: \\
+This
+
+Gene length was not compared, since no field was available and subtracting the
+start from the end position would not make sense, since introns would probably 
+get counted as well.
+
+# save Data
 
 ```{r}
 save(annot, file = "./data/Robjects/02_annot.RData")
 ```
 
+
+
+# Questions

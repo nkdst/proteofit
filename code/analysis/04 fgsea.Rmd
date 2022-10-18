@@ -4,6 +4,7 @@ author: "Nick Diercksen"
 output:
   html_notebook:
     toc: yes
+    toc_float: yes
 editor_options: 
   chunk_output_type: inline
 ---

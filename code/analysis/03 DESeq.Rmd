@@ -1,0 +1,231 @@
+---
+title: "DESeq"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    df_print: paged
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(DESeq2)
+```
+
+# DESeq
+
+## loading data
+
+```{r}
+counts.gastroc <- readRDS("./data/Robjects/counts.gastroc.rds")
+counts.soleus <- readRDS("./data/Robjects/counts.soleus.rds")
+metadata.gastroc <- readr::read_csv2("./data/counts/sample_table_gastroc.csv") %>%
+  tibble::column_to_rownames("run")
+metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
+  tibble::column_to_rownames("run")
+load("./data/Robjects/02_annot.RData")
+```
+
+
+## preparing DDS objects
+
+```{r message=FALSE, warning=FALSE}
+createDDSObject <- function(counts, metadata) {
+  # select sample columns
+  reorder_index <- match(rownames(metadata), colnames(counts))
+  counts <- counts[,reorder_index]
+  
+  # Check metadata consistency
+  all(rownames(metadata) %in% colnames(counts)) %>%
+    assertthat::assert_that(., msg = "metadata and count table do not match")
+  
+  ## DESeq2 object
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = metadata,
+                                design = ~ genotype)
+  return( DESeq(dds) )
+}
+
+# creating DESeq Objects
+dds.gastroc <- createDDSObject(counts.gastroc, metadata.gastroc)
+dds.soleus <- createDDSObject(counts.soleus, metadata.soleus)
+```
+
+## MA-Plots
+
+### gastroc
+
+```{r message=FALSE, warning=FALSE}
+plotMA(dds.gastroc)
+```
+
+
+### soleus
+
+```{r message=FALSE, warning=FALSE}
+plotMA(dds.soleus)
+```
+
+## Dispersion Estimates
+
+### gastroc
+
+```{r}
+plotDispEsts(dds.gastroc)
+```
+
+### soleus
+
+```{r}
+plotDispEsts(dds.soleus)
+```
+
+## Results
+
+```{r}
+res.gastroc <- results(dds.gastroc, alpha = 0.05)
+res.soleus <- results(dds.soleus, alpha = 0.05)
+
+
+head(res.gastroc)
+head(res.soleus)
+```
+
+### top significant diff. genes
+
+```{r}
+topGenes.gastroc <- as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+topGenes.soleus <- as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+knitr::kable(head(topGenes.gastroc), caption = "gastroc")
+knitr::kable(head(topGenes.soleus), caption = "soleus")
+```
+### p-values
+
+```{r}
+hist(res.gastroc$pvalue, main = "gastroc")
+hist(res.soleus$pvalue, main = "soleus")
+```
+
+### shrinking
+Is shrinking necessary?
+
+[] watch the course video
+
+
+
+
+## Volcano Plot
+
+```{r}
+# preparing data for the volcano plot
+resTab.gastroc <- as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  # left_join(ensemblAnnot, by = "GeneID") %>% 
+  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
+  mutate(`-log10(pvalue)` = -log10(pvalue))
+
+resTab.soleus <- as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>% 
+  # left_join(ensemblAnnot, by = "GeneID") %>% 
+  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>% 
+  mutate(`-log10(pvalue)` = -log10(pvalue))
+```
+
+```{r}
+ggplot(resTab.gastroc, aes(x = logFC, y = `-log10(pvalue)`)) +
+  geom_point(aes(colour = FDR < 0.05), size = 1) +
+  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
+
+ggplot(resTab.soleus, aes(x = logFC, y = `-log10(pvalue)`)) +
+  geom_point(aes(colour = FDR < 0.05), size = 1) +
+  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
+```
+
+
+
+
+```{r}
+# my old volcano plot function:
+# ## overview of correlations----
+# 'plots a volcano plot with the univariate correlation data of the SE
+plot.volcano <-
+  function(se,
+           x = R,
+           y = FDR,
+           threshold.x = 0.4,
+           threshold.y = 0.1,
+           threshold.n_ccls = 20) {
+    # colour mapping
+    data <- metadata(se)$univCor.dt %>%
+      .[n_ccls >= threshold.n_ccls] %>%
+      mutate(
+        correlation = case_when(
+          R <= -threshold.x & FDR < threshold.y ~ "strong_negative",
+          R >=  threshold.x & FDR < threshold.y ~ "strong_positive",
+          TRUE                                ~ "insignificant"
+        )
+      ) %>% setDT()
+    color.values <- c(
+      "strong_negative" = "blue",
+      "strong_positive" = "red",
+      "insignificant"   = "grey"
+    )
+    
+    # plotting
+    xlabel <-
+      ifelse(se@metadata$univCor.method == "spearman", expression(rho), "R")
+    ggplot(data,
+           aes(# `!!enquo` extracts value of parameter
+             x = !!enquo(x),
+             y = -log10(!!enquo(y)))) +
+      geom_point(
+        aes(colour = correlation, fill = tcga_code),
+        # size = 1.5, alpha = 0.5
+        shape = 21,
+        alpha = 0.7,
+        stroke = 1,
+        size = 2
+        
+      ) +
+      # adding the cut-off lines:
+      geom_vline(xintercept =  threshold.x,        linetype = "twodash") +
+      geom_vline(xintercept = -threshold.x,        linetype = "twodash") +
+      geom_hline(yintercept = -log10(threshold.y),
+                 linetype = "twodash") +
+      scale_colour_manual(values = color.values) +
+      scale_fill_manual(values = as.vector(pals::polychrome(35))) +
+      xlab(xlabel) +
+      theme_minimal()
+  }
+```
+
+
+
+# save R ojects
+
+```{r}
+saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
+saveRDS(counts.soleus, file = "./data/Robjects/counts.soleus.rds")
+save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
+```
+
+
+
+# Final Questions
+DESeq:
+
+* is shrinking necessary? (`lfcShrink`)
