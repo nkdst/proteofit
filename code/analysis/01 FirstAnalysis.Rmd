@@ -18,7 +18,6 @@ library(ggplot2)
 library(treemap)
 library(DESeq2)
 library(ggfortify) # autoplot (PCA)
-# library(gridExtra)
 library(ggpubr)
 
 # Heatmaps
@@ -457,30 +456,42 @@ gastroc <- gastroc[order(rownames(gastroc)),]
 soleus <- soleus[order(rownames(soleus)),]
 
 # rowData
-rowdata <- gastroc[, 13:21]
-rowdata$gastroc.filtered = rownames(rowdata) %in% rownames(counts.gastroc)
-rowdata$soleus.filtered  = rownames(rowdata) %in% rownames(counts.soleus)
+rowdata.gastroc <- gastroc[, 13:21]
+rowdata.soleus <- rowdata.gastroc # should be the same I think
+rowdata.gastroc$filtered = rownames(rowdata.gastroc) %in% rownames(counts.gastroc)
+rowdata.soleus$filtered  = rownames(rowdata.soleus) %in% rownames(counts.soleus)
 
-se <- SummarizedExperiment(
-  assays = list("gastroc" = gastroc[, 1:12], "soleus" = soleus[, 1:12]),
-  rowData = rowdata,
-  colData = metadata.gastroc[, 3, drop=F] # only genotype is available as information
+se.gastroc <- SummarizedExperiment(
+  assays = list(
+    "gastroc" = as.matrix(gastroc[, 1:12])
+  ),
+  rowData = rowdata.gastroc,
+  colData = metadata.gastroc[, 3, drop = F] # only genotype is available as information
+)
+
+se.soleus <- SummarizedExperiment(
+  assays = list(
+    "soleus" = as.matrix(soleus[, 1:12])
+  ),
+  rowData = rowdata.soleus,
+  colData = metadata.soleus[, 3, drop = F] # only genotype is available as information
 )
 ```
 
 the filtered assays can be accessed as following:
 ```{r SE-filter, eval=FALSE}
-df <- se[rowData(se)$gastroc.filtered,] %>% assays() %>% .$gastroc
+counts.preFiltered <- se[rowData(se)$filtered,] %>% assay()
 ```
 
 ## save R Objects
 
 ```{r}
+saveRDS(se.gastroc,             file = "./data/Robjects/01_se.gastroc.rds")
+saveRDS(se.soleus,             file = "./data/Robjects/01_se.soleus.rds")
+
+# (redundant)
 saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
 saveRDS(counts.soleus,  file = "./data/Robjects/counts.soleus.rds")
-saveRDS(se,             file = "./data/Robjects/01_se.rds")
-
-save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
 ```
 
 
