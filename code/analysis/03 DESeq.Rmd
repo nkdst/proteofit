@@ -1,5 +1,5 @@
 ---
-title: "DESeq"
+title: "03 DESeq"
 author: "Nick Diercksen"
 output:
   html_notebook:
@@ -16,20 +16,23 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
 library(DESeq2)
+library(SummarizedExperiment)
+library(EnhancedVolcano)
 ```
 
 # DESeq
 
 ## loading data
 
+For the DESeq2 analysis, the raw, prefiltered counts will be used.
+
 ```{r}
-counts.gastroc <- readRDS("./data/Robjects/counts.gastroc.rds")
-counts.soleus <- readRDS("./data/Robjects/counts.soleus.rds")
-metadata.gastroc <- readr::read_csv2("./data/counts/sample_table_gastroc.csv") %>%
-  tibble::column_to_rownames("run")
-metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
-  tibble::column_to_rownames("run")
-load("./data/Robjects/02_annot.RData")
+se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
+se.soleus <- readRDS("./data/Robjects/01_se.soleus.rds")
+
+counts.gastroc <- se.gastroc[rowData(se.gastroc)$filtered,] %>% assay()
+counts.soleus <- se.soleus[rowData(se.soleus)$filtered,] %>% assay()
+metadata <- colData(se.gastroc)
 ```
 
 
@@ -49,12 +52,17 @@ createDDSObject <- function(counts, metadata) {
   dds <- DESeqDataSetFromMatrix(countData = counts,
                                 colData = metadata,
                                 design = ~ genotype)
+  
   return( DESeq(dds) )
 }
 
 # creating DESeq Objects
-dds.gastroc <- createDDSObject(counts.gastroc, metadata.gastroc)
-dds.soleus <- createDDSObject(counts.soleus, metadata.soleus)
+dds.gastroc <- createDDSObject(counts.gastroc, metadata)
+dds.soleus <- createDDSObject(counts.soleus, metadata)
+
+# creating SESeqg Objects from SE
+# dds.gastroc.se <- DESeqDataSet(se.gastroc, design = ~ genotype)
+# dds.soleus.se <- DESeqDataSet(se.soleus, design = ~ genotype)
 ```
 
 ## MA-Plots
@@ -120,107 +128,85 @@ hist(res.gastroc$pvalue, main = "gastroc")
 hist(res.soleus$pvalue, main = "soleus")
 ```
 
-### shrinking
-Is shrinking necessary?
-
-[] watch the course video
-
-
-
-
 ## Volcano Plot
 
-```{r}
-# preparing data for the volcano plot
-resTab.gastroc <- as.data.frame(res.gastroc) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  # left_join(ensemblAnnot, by = "GeneID") %>% 
-  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
-  mutate(`-log10(pvalue)` = -log10(pvalue))
+```{r fig.width=4, fig.height=4}
 
-resTab.soleus <- as.data.frame(res.soleus) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  # left_join(ensemblAnnot, by = "GeneID") %>% 
-  dplyr::rename(logFC = log2FoldChange, FDR = padj) %>% 
-  mutate(`-log10(pvalue)` = -log10(pvalue))
-```
-
-```{r}
-ggplot(resTab.gastroc, aes(x = logFC, y = `-log10(pvalue)`)) +
-  geom_point(aes(colour = FDR < 0.05), size = 1) +
-  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
-
-ggplot(resTab.soleus, aes(x = logFC, y = `-log10(pvalue)`)) +
-  geom_point(aes(colour = FDR < 0.05), size = 1) +
-  geom_text(data = ~top_n(.x, 1, wt=-FDR), aes(label = GeneID))
-```
-
-
-
-
-```{r}
-# my old volcano plot function:
-# ## overview of correlations----
-# 'plots a volcano plot with the univariate correlation data of the SE
-plot.volcano <-
-  function(se,
-           x = R,
-           y = FDR,
-           threshold.x = 0.4,
-           threshold.y = 0.1,
-           threshold.n_ccls = 20) {
-    # colour mapping
-    data <- metadata(se)$univCor.dt %>%
-      .[n_ccls >= threshold.n_ccls] %>%
-      mutate(
-        correlation = case_when(
-          R <= -threshold.x & FDR < threshold.y ~ "strong_negative",
-          R >=  threshold.x & FDR < threshold.y ~ "strong_positive",
-          TRUE                                ~ "insignificant"
-        )
-      ) %>% setDT()
-    color.values <- c(
-      "strong_negative" = "blue",
-      "strong_positive" = "red",
-      "insignificant"   = "grey"
+volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = character()) {
+  gene_names <-
+    rowData(se)[rownames(result), c("gene_name"), drop = F]
+  results.df <- result %>%
+    as.data.frame() %>%
+    dplyr::arrange(padj)
+  
+  # top 10 gene labels for respectively up and down regulation
+  labs.up <- results.df[results.df$log2FoldChange > FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  labs.down <- results.df[results.df$log2FoldChange < -FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique()
+  
+  # custom colors:
+  keyvals <- ifelse(
+    result$log2FoldChange < -FCutoff &
+      result$padj < pCutoff,
+    'royalblue',
+    ifelse(
+      result$log2FoldChange > FCutoff &
+        result$padj < pCutoff,
+      'red',
+      'gray'
     )
-    
-    # plotting
-    xlabel <-
-      ifelse(se@metadata$univCor.method == "spearman", expression(rho), "R")
-    ggplot(data,
-           aes(# `!!enquo` extracts value of parameter
-             x = !!enquo(x),
-             y = -log10(!!enquo(y)))) +
-      geom_point(
-        aes(colour = correlation, fill = tcga_code),
-        # size = 1.5, alpha = 0.5
-        shape = 21,
-        alpha = 0.7,
-        stroke = 1,
-        size = 2
-        
-      ) +
-      # adding the cut-off lines:
-      geom_vline(xintercept =  threshold.x,        linetype = "twodash") +
-      geom_vline(xintercept = -threshold.x,        linetype = "twodash") +
-      geom_hline(yintercept = -log10(threshold.y),
-                 linetype = "twodash") +
-      scale_colour_manual(values = color.values) +
-      scale_fill_manual(values = as.vector(pals::polychrome(35))) +
-      xlab(xlabel) +
-      theme_minimal()
-  }
+  )
+  keyvals[is.na(keyvals)] <- 'gray'
+  names(keyvals)[keyvals == 'red'] <- 'high'
+  names(keyvals)[keyvals == 'gray'] <- 'mid'
+  names(keyvals)[keyvals == 'royalblue'] <- 'low'
+  
+  vlc.plt <- EnhancedVolcano(
+    result,
+    x = 'log2FoldChange',
+    y = 'padj',
+    title = 'WT vs KO: Nfe2l1 knockout',
+    subtitle = ifelse(isEmpty(tissue), "", paste0('tissue: ', tissue)),
+    xlab = 'padj',
+    pCutoff = pCutoff,
+    FCcutoff = FCutoff,
+    legendPosition = 'right',
+    pointSize = 2,
+    colCustom = keyvals,
+    lab = make.names(gene_names$gene_name),
+    selectLab = make.names(selectLab),
+    labSize = 3,
+    boxedLabels = TRUE,
+    parseLabels = TRUE,
+    drawConnectors = TRUE,
+    max.overlaps = Inf
+  )
+  
+  return(vlc.plt)
+}
+
+volcanoPlot(res.gastroc, se.gastroc, pCutoff = 0.05, FCutoff = 2.5, tissue = "gastrocnemius")
+
+volcanoPlot(res.soleus, se.soleus, pCutoff = 0.05, FCutoff = 2.5, tissue = "soleus")
+
 ```
 
 
+Gene names beginning with a number were modified to begin with a 'X' for the
+plot to be able to plot. Otherwise the following error would occur:
+
+```{}
+Error in parse(text = "2810474O19Rik") : <text>:1:8: unexpected symbol
+1: 2810474O19Rik
+           ^
+```
 
 # save R ojects
 
 ```{r}
-saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
-saveRDS(counts.soleus, file = "./data/Robjects/counts.soleus.rds")
-save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
+save(dds.gastroc, dds.soleus, res.gastroc, res.soleus, file = "./data/Robjects/03_DDS.RData")
 ```
 
 
@@ -229,3 +215,9 @@ save(dds.gastroc, dds.soleus, file = "./data/Robjects/01_DDS.RData")
 DESeq:
 
 * is shrinking necessary? (`lfcShrink`)
+* `resultsNames(dds)` yields "Intercept" and "genotype_WT_vs_KO". What is "Intercept"?
+* is the design done properly? is "WT vs KO" correct?
+  * 
+
+# TODO:
+* how to allow labels (gene names) in volcanoPlot beginning with a number?
