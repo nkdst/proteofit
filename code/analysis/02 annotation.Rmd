@@ -130,6 +130,10 @@ print(paste0("There are ", sum(dif_biotypes), " genes annotated with different b
 df[(dif_biotypes),cols] %>% head(20)
 ```
 
+About a fifth of the genes is annotated with a different biotype. This has to be
+looked at more specifically though, since this could still be viable in the 
+biological sense.
+
 ## gene names
 ```{r}
 cols <- c("ensembl_gene_id", "external_gene_name", "gene_name")
@@ -137,6 +141,11 @@ dif_names <- !df$external_gene_name == df$gene_name
 print(paste0("There are ", sum(dif_names), " genes annotated with different gene names"))
 df[(dif_names), cols] %>% head(20)
 ```
+
+Not as many differences as the biotypes, and most of them seem to be synonyms:
+
+* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000002280;r=17:25992750-26002306
+* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000003527;r=16:17718573-17729212
 
 ## chromosome
 ```{r}
@@ -147,15 +156,29 @@ df[(!df$chromosome_name == df$gene_chr), cols] %>% head(20)
 Here we "only" have 2 genes annotated with different chromosomes, but this might
 be one of the more severe differences!
 
-**ENSMUSG00000065387** \\
+**ENSMUSG00000065387**
+
+* "5S_rRNA": is known in mammals (Pan troglodytes[Chimpanzee], Canis familiaris[Dog], Bos Taurus[Cow])
+* "n-R5s85": is a gene in "Mus musculus" (What is expected)
+
+| [Source](https://www.genecards.org/cgi-bin/carddisp.pl?gene=RNA5SP273)
+
+=> Could this mean, that external_gene_name is wrongly matched to other species than mouse?
+
+
+**ENSMUSG00000076377**
+
+* "Gm22370": is assigned to Mouse as "ENSMUST00000102422.1" (ensembl transcript id) [Source](http://rnact.crg.eu/rnas?page=228)
+
 
 
 
 ## gene positions
--> start
+### start
 ```{r}
 dif_start <- df$start_position - df$gene_start
 head(dif_start, 20)
+summary(dif_start)
 ```
 
 total genes with the same start position
@@ -167,11 +190,14 @@ sum(dif_start == 0)
 hist(abs(dif_start), breaks = 100)
 ```
 
+These differ quite substantially. Either these are different metrics or really
+relating to a different species.
 
--> end
+### end
 ```{r}
 dif_end <- df$end_position - df$gene_end
 head(dif_end, 20)
+summary(dif_end)
 ```
 
 
@@ -185,27 +211,15 @@ sum(dif_end == 0)
 hist(abs(dif_end), breaks = 100)
 ```
 
+Similar to the start.
+
 ## Discussion
 On the first glance, there are several inconsistencies with the two annotation
-sources.
-
-Biotypes: \\
-About a fifth of the genes is annotated with a different biotype. This has to be
-looked at more specifically though, since this could still be viable in the 
-biological sense.
-
-gene names: \\
-Not as many differences as the biotypes, but most of them seem to be synonyms:
-
-* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000002280;r=17:25992750-26002306
-* http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000003527;r=16:17718573-17729212
-
-chromosomes: \\
-This
+sources. Whether and where a wrong data source was chosen has to be examined.
 
 Gene length was not compared, since no field was available and subtracting the
-start from the end position would not make sense, since introns would probably 
-get counted as well.
+start from the end position would not make sense (introns would probably 
+get counted as well).
 
 # save Data
 
@@ -216,3 +230,4 @@ save(annot, file = "./data/Robjects/02_annot.RData")
 
 
 # Questions
+
