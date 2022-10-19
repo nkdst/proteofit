@@ -237,9 +237,13 @@ x = dev.off()  # see above
 p
 ```
 
-# most variable genes (top 1000)
-To obtain the most variable genes, a z-score will be applied to then take the
-sd and filter for the top 1000
+
+# most variable genes (top 1000) & Normalization
+To obtain the most variable genes, a `z-score` will be applied per gene to then
+take the `sd` and filter for the top 1000
+
+
+z-score:
 
 $\frac{x - mean(x)}{sd(x)}$
 
@@ -269,7 +273,7 @@ The following Heatmaps are done with `ComplexHeatmap` but are very bad looking.
 
 #### gastroc
 
-```{r message=FALSE}
+```{r fig.width=8, fig.height=8, message=FALSE}
 # Get some nicer colours
 mypalette <- brewer.pal(11, "RdYlBu")
 # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
@@ -287,23 +291,13 @@ chm.gastroc <- Heatmap(
     # row_dend_side = "right",
   )
 
-# saving the CHM as png, to adjust the resolution (I don't know another method)
-png(
-  "./plots/01_CHM_top_variable_genes.gastroc.png",
-  width = 10,
-  height = 7.5,
-  res = 150,
-  units = "in"
-)
-draw(chm.gastroc)
-invisible(dev.off())
+chm.gastroc
 ```
 
-![](./plots/01_CHM_top_variable_genes.gastroc.png)
 
 #### soleus
 
-```{r message=FALSE}
+```{r fig.width=8, fig.height=8, message=FALSE}
 chm.soleus <- Heatmap(
     log2(counts.soleus.top + 1) %>% as.matrix(),
     row_title = "genes",
@@ -315,19 +309,8 @@ chm.soleus <- Heatmap(
     # row_dend_side = "right",
   )
 
-# saving the CHM as png, to adjust the resolution (I don't know another method)
-png(
-  "./plots/01_CHM_top_variable_genes.soleus.png",
-  width = 10,
-  height = 7.5,
-  res = 150,
-  units = "in"
-)
-draw(chm.soleus)
-invisible(dev.off())
+chm.soleus
 ```
-
-![](./plots/01_CHM_top_variable_genes.soleus.png)
 
 
 
