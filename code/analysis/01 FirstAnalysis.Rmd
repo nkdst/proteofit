@@ -248,13 +248,19 @@ z-score:
 $\frac{x - mean(x)}{sd(x)}$
 
 ```{r}
-mostVariableRows <- function(M, ntop=1000) {
+zscore <- function(M) {
   s <- apply( M,1,sd )      # standard deviation
   µ <- apply( M, 1, mean )  # mean
-  M.z <- (M - µ) / s         # zscore
+  M.z <- (M - µ) / s        # zscore
+  return(M.z)
+}
+
+# ' returning the raw counts of the most variable genes by applying zscore and sd
+mostVariableRows <- function(M, ntop=1000) {
+  M.z <- zscore(M)
   
-  # sd ordered descending
-  sdev <- apply(counts.gastroc, 1, sd)
+  # ordering by sd descending
+  sdev <- apply(M.z, 1, sd)
   M.top <- M[order(sdev, decreasing = T)[1:ntop] , ]
   return(M.top)
 }
@@ -273,76 +279,36 @@ The following Heatmaps are done with `ComplexHeatmap` but are very bad looking.
 
 #### gastroc
 
-```{r fig.width=8, fig.height=8, message=FALSE}
-# Get some nicer colours
-mypalette <- brewer.pal(11, "RdYlBu")
-# http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
-morecols <- colorRampPalette(mypalette)
+```{r fig.width=4, fig.height=4, message=FALSE}
 
-
-chm.gastroc <- Heatmap(
-    log2(counts.gastroc.top + 1) %>% as.matrix(),
+# ' returning a CHM with the z-scored counts
+plotCHM <- function(counts) {
+  # Get some nicer colours
+  mypalette <- brewer.pal(11, "RdYlBu")
+  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
+  morecols <- colorRampPalette(mypalette)
+  
+  chm <- Heatmap(
+    zscore(counts),
     row_title = "genes",
-    name = "log2",
+    name = "zscore",
     show_row_names = FALSE,
     column_title = "samples",
     col = rev(morecols(50)),
     column_title_side = "bottom"
-    # row_dend_side = "right",
   )
+  return(chm)
+}
 
-chm.gastroc
+plotCHM(counts.gastroc.top)
 ```
 
 
 #### soleus
 
-```{r fig.width=8, fig.height=8, message=FALSE}
-chm.soleus <- Heatmap(
-    log2(counts.soleus.top + 1) %>% as.matrix(),
-    row_title = "genes",
-    name = "log2",
-    show_row_names = FALSE,
-    column_title = "samples",
-    col = rev(morecols(50)),
-    column_title_side = "bottom"
-    # row_dend_side = "right",
-  )
-
-chm.soleus
+```{r fig.width=4, fig.height=4, message=FALSE}
+plotCHM(counts.soleus.top)
 ```
-
-
-
-### `gplots::heatmap.2`
-
-With this package, the heatmaps are seemingly generated differently, even though
-I thought both packages use `hclust()`. Not sure yet what is the difference.
-
-```{r}
-# Set up colour vector for celltype variable
-col.cell <- rep(c("#00C3C6"), 12)
-col.cell[metadata.gastroc$genotype == "KO"] = "#FF6C67"
-
-heatmap.2(log2(as.matrix(counts.gastroc.top + 1)),
-          labRow = FALSE,
-          col=rev(morecols(50)),
-          ColSideColors=col.cell, scale="row",
-          trace="column",
-          main="gastroc",
-          lmat=rbind(c(5,4), c(3,2), c(0,1)),
-          lhei=c(2.2,4,0.2))
-
-heatmap.2(log2(as.matrix(counts.soleus.top + 1)), 
-          labRow = FALSE,
-          col=rev(morecols(50)),
-          ColSideColors=col.cell, scale="row",
-          trace="column",
-          main="soleus",
-          lmat=rbind(c(5,4), c(3,2), c(0,1)),
-          lhei=c(2.2,4,0.2))
-```
-
 
 
 
@@ -350,11 +316,11 @@ heatmap.2(log2(as.matrix(counts.soleus.top + 1)),
 
 ## gastroc
 
-the pca is performed on the raw data (not z-scored)
-=> Thus using the `scale.=T` argument?
+the pca is performed on the z-scored data
+=> Thus not using the `scale.=T` argument?
 
 ```{r message=FALSE}
-pca <- prcomp(t(counts.gastroc.top), scale. = T)
+pca <- prcomp(t(counts.gastroc.top), .scale=T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
                        X = pca$x[, 1],
@@ -485,8 +451,3 @@ Most variable genes:
 * which heatmap function should I use and what should I change about the plots?
 * should I include the traces?
 * should I completely omit the heatmaps (visualisation of most variable genes?)
-
-PCA:
-
-* I was not sure anymore if the PCA should be performed with normalized or not normalized counts? (Last week I thought we said not normalized, but today I think you said normalized?) Just want to double check, sorry.
-* if the data is not normalized, does it mean to then use the `scale=T` argument?
