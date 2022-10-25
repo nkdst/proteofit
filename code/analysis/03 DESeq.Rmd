@@ -18,7 +18,13 @@ library(ggplot2)
 library(DESeq2)
 library(SummarizedExperiment)
 library(EnhancedVolcano)
+library(ggVennDiagram)
 ```
+
+```{r plotSettings, include=FALSE}
+customColors <- c("WT"= "#00C3C6","KO"= "#FF6C67")
+```
+
 
 # DESeq
 
@@ -73,6 +79,13 @@ dds.soleus <- createDDSObject(counts.soleus, metadata)
 plotMA(dds.gastroc)
 ```
 
+[](shrinking the log2 fold change estimates to be more accurate)
+```{r message=FALSE, warning=FALSE, eval=FALSE, include=FALSE}
+# TODO: see if lfcShrink would change any of the following plots (also volcano)
+result <- lfcShrink(dds, coef = "genotype_WT_vs_KO")
+plotMA(dds.gastroc)
+```
+
 
 ### soleus
 
@@ -97,8 +110,8 @@ plotDispEsts(dds.soleus)
 ## Results
 
 ```{r}
-res.gastroc <- results(dds.gastroc, alpha = 0.05)
-res.soleus <- results(dds.soleus, alpha = 0.05)
+res.gastroc <- results(dds.gastroc, alpha = 0.05, contrast = c("genotype", "KO", "WT"))
+res.soleus <- results(dds.soleus, alpha = 0.05, contrast = c("genotype", "KO", "WT"))
 
 
 head(res.gastroc)
@@ -128,11 +141,10 @@ hist(res.gastroc$pvalue, main = "gastroc")
 hist(res.soleus$pvalue, main = "soleus")
 ```
 
-## Volcano Plot
+### Volcano Plot
 
-```{r fig.width=4, fig.height=4}
-
-volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = character()) {
+```{r fig.width=4, fig.height=4, warning=FALSE}
+volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
   gene_names <-
     rowData(se)[rownames(result), c("gene_name"), drop = F]
   results.df <- result %>%
@@ -144,7 +156,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = char
     rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
   labs.down <- results.df[results.df$log2FoldChange < -FCutoff, ] %>%
     rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
-  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique()
+  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique() # always including "Nfe2l1"
   
   # custom colors:
   keyvals <- ifelse(
@@ -159,9 +171,9 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = char
     )
   )
   keyvals[is.na(keyvals)] <- 'gray'
-  names(keyvals)[keyvals == 'red'] <- 'high'
-  names(keyvals)[keyvals == 'gray'] <- 'mid'
-  names(keyvals)[keyvals == 'royalblue'] <- 'low'
+  names(keyvals)[keyvals == 'red'] <- 'up regulated'
+  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
+  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
   
   vlc.plt <- EnhancedVolcano(
     result,
@@ -169,17 +181,16 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = char
     y = 'padj',
     title = 'WT vs KO: Nfe2l1 knockout',
     subtitle = ifelse(isEmpty(tissue), "", paste0('tissue: ', tissue)),
-    xlab = 'padj',
+    ylab = expression(paste(-Log[10], p[adj])),
     pCutoff = pCutoff,
     FCcutoff = FCutoff,
     legendPosition = 'right',
     pointSize = 2,
     colCustom = keyvals,
-    lab = make.names(gene_names$gene_name),
-    selectLab = make.names(selectLab),
+    lab = gene_names$gene_name,
+    selectLab = selectLab,
     labSize = 3,
     boxedLabels = TRUE,
-    parseLabels = TRUE,
     drawConnectors = TRUE,
     max.overlaps = Inf
   )
@@ -187,21 +198,147 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 2.5, tissue = char
   return(vlc.plt)
 }
 
-volcanoPlot(res.gastroc, se.gastroc, pCutoff = 0.05, FCutoff = 2.5, tissue = "gastrocnemius")
+FCutoff = 1
+pCutoff = 0.01
 
-volcanoPlot(res.soleus, se.soleus, pCutoff = 0.05, FCutoff = 2.5, tissue = "soleus")
+volcanoPlot(res.gastroc, se.gastroc, pCutoff = 0.01, FCutoff = FCutoff, tissue = "gastrocnemius")
+
+volcanoPlot(res.soleus, se.soleus, pCutoff = 0.01, FCutoff = FCutoff, tissue = "soleus")
 
 ```
 
 
-Gene names beginning with a number were modified to begin with a 'X' for the
-plot to be able to plot. Otherwise the following error would occur:
 
-```{}
-Error in parse(text = "2810474O19Rik") : <text>:1:8: unexpected symbol
-1: 2810474O19Rik
-           ^
+### top differential expressed genes
+```{r }
+setBold <- function(src, special_labs) {
+  # source: https://stackoverflow.com/questions/39694490/highlighting-individual-axis-labels-in-bold-using-ggplot2
+  if (!is.factor(src)) src <- factor(src)                   
+  src_levels <- base::levels(src)                          
+  brave <- special_labs %in% src_levels                   
+  b_vec <- rep("plain", length(src_levels))              
+  if (all(brave)) {                                     
+    b_pos <- purrr::map_int(special_labs, ~which(.==src_levels))
+    b_vec[b_pos] <- "bold"
+    b_vec
+  } else {
+    message("setBold: no matching element found")
+  }
+  return(b_vec)
+}
+
+getTopExpressedEnsemblNames <-
+  function(result,
+           FCutoff,
+           n,
+           up = T) {
+    .filter <- ifelse(up, `>`, `<`)
+    
+    subset(result, .filter(log2FoldChange, FCutoff)) %>%
+      data.frame() %>%
+      filter(baseMean > 100) %>%
+      arrange(padj) %>%
+      .[1:n, ] %>%
+      rownames()
+  }
+
+boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, tissue ="") {
+  # getting the top n regulated genes
+  names.top <- getTopExpressedEnsemblNames(result, FCutoff=FCutoff, n=n, up = upregulated)
+  
+  counts.top <- counts(dds, normalized=T)[names.top, ]
+  metadata <- colData(se) %>% as.data.frame()
+  gene_names <- rowData(se)[, c("gene_name"), drop = F] %>% as.data.frame()
+  
+  counts.plt <-
+    data.frame(counts.top) %>%
+    tibble::rownames_to_column(var = "ensembl") %>%
+    tidyr::gather(key = "samplename",
+           value = "normalized_counts", 2:13) %>%
+    merge(metadata, by.x="samplename", by.y=0) %>%
+    merge(gene_names, by.x="ensembl", by.y=0)  %>%
+    mutate(genotype = factor(genotype)) %>%
+    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed befor "KO"
+    mutate(gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T))
+  
+  direction <- ifelse(upregulated, "up", "down")
+  
+  ggplot(counts.plt,
+         aes(
+           x = as.factor(gene_name),
+           y = normalized_counts,
+           fill = genotype
+         )) +
+    geom_dotplot(
+      binaxis = 'y',
+      stackdir = 'center',
+      dotsize = 0.5,
+      position = position_dodge(0.8)
+    ) +
+    geom_boxplot() +
+    scale_y_log10() +
+    xlab("Genes") +
+    ylab("Normalized Counts") +
+    scale_fill_manual(values = customColors) +
+    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      face = setBold(counts.plt$gene_name, c("Nfe2l1"))
+    ))
+}
 ```
+
+#### gastroc
+
+```{r warning=FALSE, message=FALSE}
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastroc")
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastroc")
+```
+
+
+#### soleus
+
+```{r warning=FALSE, message=FALSE}
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
+```
+### overlapping genes (Venn Diagram)
+```{r vennDiagram}
+ensemblToName <- function(ens, se) {
+  rowData(se)[ens, "gene_name"]
+}
+
+
+vennDiagram.top <- function(FCutoff=1, n=20, up=T, se) {
+  genes1 <- getTopExpressedEnsemblNames(res.gastroc, FCutoff = FCutoff, n, up=up)
+  genes2 <- getTopExpressedEnsemblNames(res.soleus, FCutoff = FCutoff, n, up=up)
+  
+  overlap <- genes1[genes1 %in% genes2] %>%
+    ensemblToName(se)
+  
+  
+  
+  ggVennDiagram(list(genes1, genes2), category.names = c("gastroc", "soleus"), ) +
+    ggtitle(label = paste0("overlap: ", paste(overlap, collapse=", ")))
+}
+```
+
+#### upregulated
+```{r}
+vennDiagram.top(FCutoff = FCutoff, n=20, up=T, se=se.gastroc)
+```
+
+
+
+#### downregulated
+```{r}
+vennDiagram.top(FCutoff = FCutoff, n=20, up=F, se=se.gastroc)
+```
+
+
 
 # save R ojects
 
@@ -210,14 +347,6 @@ save(dds.gastroc, dds.soleus, res.gastroc, res.soleus, file = "./data/Robjects/0
 ```
 
 
+# Questions
 
-# Final Questions
-DESeq:
-
-* is shrinking necessary? (`lfcShrink`)
-* `resultsNames(dds)` yields "Intercept" and "genotype_WT_vs_KO". What is "Intercept"?
-* is the design done properly? is "WT vs KO" correct?
-  * 
-
-# TODO:
-* how to allow labels (gene names) in volcanoPlot beginning with a number?
+* should the boxplots be sorted after the counts, as they currently are?
