@@ -312,17 +312,14 @@ To visualize this, the `-log10(padj)` values were multiplied by (-1) where the `
 was negative.
 ```{r}
     
-prepare_result <- function(res, colname="padj", FCutoff, pCutoff) {
-  names.top <- res %>%
-    data.frame() %>% 
-    filter(padj < pCutoff, log2FoldChange > FCutoff | log2FoldChange < -FCutoff) %>% 
-    rownames()
-  
-  res.prep <- data.frame(res[names.top, c("padj", "log2FoldChange"), drop=F]) %>%
-    mutate(padj = -log10(padj)) %>%
-    mutate(!!colname := case_when(log2FoldChange > 1 ~ padj,
-                            log2FoldChange < 1 ~padj * (-1))) %>%
+prepare_result <- function(res, colname="stat", FCutoff, pCutoff) {
+  res.prep <- res %>%
+    data.frame() %>%
+    filter(padj < pCutoff,
+           log2FoldChange > FCutoff | log2FoldChange < -FCutoff) %>%
+    dplyr::rename(!!colname := stat) %>%
     select(!!colname)
+  return(res.prep)
 }
 
 prep.gastroc <- prepare_result(res.gastroc, colname="gastroc", FCutoff, pCutoff)
@@ -343,49 +340,17 @@ res.combined <- merge(prep.gastroc,
   merge(gene_names, by.x="Row.names", by.y=0)
 
 
-# TODO: transform axes labels into latex
-ggplot(res.combined, aes(x=gastroc, y=soleus, label=gene_name)) +
-  geom_point( aes(color = diff.exp)) +
-  scale_color_manual(values = c("gray", "red", "royalblue")) + 
-  labs(x = "gastroc (-Log10(p_adj)", y = "soleus (-Log10(p_adj)") +
-  ggrepel::geom_label_repel(max.overlaps = 60)
+ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  scale_color_manual(values = c("gray", "red", "royalblue")) +
+  labs(x = "gastroc", y = "soleus") +
+  ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "stat (Wald test)")
   
   
 
-```
-
-
-### overlapping genes (Venn Diagram) [deprecated]
-```{r vennDiagram}
-ensemblToName <- function(ens, se) {
-  rowData(se)[ens, "gene_name"]
-}
-
-
-vennDiagram.top <- function(FCutoff=1, n=20, up=T, se) {
-  genes1 <- getTopExpressedEnsemblNames(res.gastroc, FCutoff = FCutoff, n, up=up)
-  genes2 <- getTopExpressedEnsemblNames(res.soleus, FCutoff = FCutoff, n, up=up)
-  
-  overlap <- genes1[genes1 %in% genes2] %>%
-    ensemblToName(se)
-  
-  
-  
-  ggVennDiagram(list(genes1, genes2), category.names = c("gastroc", "soleus"), ) +
-    ggtitle(label = paste0("overlap: ", paste(overlap, collapse=", ")))
-}
-```
-
-#### upregulated
-```{r}
-vennDiagram.top(FCutoff = FCutoff, n=20, up=T, se=se.gastroc)
-```
-
-
-
-#### downregulated
-```{r}
-vennDiagram.top(FCutoff = FCutoff, n=20, up=F, se=se.gastroc)
 ```
 
 
@@ -400,3 +365,5 @@ save(dds.gastroc, dds.soleus, res.gastroc, res.soleus, file = "./data/Robjects/0
 # Questions
 
 * should the boxplots be sorted after the counts, as they currently are?
+* is the scatter diagram done correctly?
+* what is/can be the title of the scatter plot?
