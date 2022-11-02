@@ -305,7 +305,57 @@ boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gas
 boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
 boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
 ```
-### overlapping genes (Venn Diagram)
+
+
+### most differential genes, both tissues
+To visualize this, the `-log10(padj)` values were multiplied by (-1) where the `log2FoldChange`
+was negative.
+```{r}
+    
+prepare_result <- function(res, colname="padj", FCutoff, pCutoff) {
+  names.top <- res %>%
+    data.frame() %>% 
+    filter(padj < pCutoff, log2FoldChange > FCutoff | log2FoldChange < -FCutoff) %>% 
+    rownames()
+  
+  res.prep <- data.frame(res[names.top, c("padj", "log2FoldChange"), drop=F]) %>%
+    mutate(padj = -log10(padj)) %>%
+    mutate(!!colname := case_when(log2FoldChange > 1 ~ padj,
+                            log2FoldChange < 1 ~padj * (-1))) %>%
+    select(!!colname)
+}
+
+prep.gastroc <- prepare_result(res.gastroc, colname="gastroc", FCutoff, pCutoff)
+prep.soleus  <- prepare_result(res.soleus,  colname="soleus",  FCutoff, pCutoff)
+
+
+gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
+  select(gene_name)
+
+res.combined <- merge(prep.gastroc,
+                      prep.soleus,
+                      by = 0) %>%
+  mutate(diff.exp = case_when(
+    gastroc > 0 & soleus > 0 ~ "up",
+    gastroc < 0 & soleus < 0 ~ "down",
+    TRUE ~ "different"
+  )) %>% 
+  merge(gene_names, by.x="Row.names", by.y=0)
+
+
+# TODO: transform axes labels into latex
+ggplot(res.combined, aes(x=gastroc, y=soleus, label=gene_name)) +
+  geom_point( aes(color = diff.exp)) +
+  scale_color_manual(values = c("gray", "red", "royalblue")) + 
+  labs(x = "gastroc (-Log10(p_adj)", y = "soleus (-Log10(p_adj)") +
+  ggrepel::geom_label_repel(max.overlaps = 60)
+  
+  
+
+```
+
+
+### overlapping genes (Venn Diagram) [deprecated]
 ```{r vennDiagram}
 ensemblToName <- function(ens, se) {
   rowData(se)[ens, "gene_name"]
