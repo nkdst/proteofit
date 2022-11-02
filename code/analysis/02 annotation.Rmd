@@ -27,7 +27,7 @@ corresponding DBs.
 # read in data
 
 ```{r}
-se <- readRDS("./data/Robjects/01_se.rds")
+se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
 ```
 
 
@@ -72,7 +72,7 @@ listAttributes(ensembl) %>% head(40)
 
 ```{r}
 # 
-filterValues <- rownames(se)
+filterValues <- rownames(se.gastroc)
 filterType <- "ensembl_gene_id"
 attributeNames <- c('ensembl_gene_id',
                     'entrezgene_id',
@@ -87,26 +87,27 @@ attributeNames <- c('ensembl_gene_id',
 annot <- getBM(attributes=attributeNames,
                filters = filterType,
                values = filterValues,
-               mart = ensembl)
+               mart = ensembl) %>%
+  dplyr::rename(GeneID=ensembl_gene_id)
 ```
 
 
 duplicate ids:
 ```{r}
-sum(duplicated(annot$ensembl_gene_id))
+sum(duplicated(annot$GeneID))
 ```
 
 
 missing genes:
 ```{r}
-missingGenes <- !rownames(se) %in% annot$ensembl_gene_id
-rownames(se)[missingGenes] %>% head(20)
+missingGenes <- !rownames(se.gastroc) %in% annot$GeneID
+rownames(se.gastroc)[missingGenes] %>% head(20)
 ```
 
 
 # consistency in the metadata (sanity checks)
 
-the metadata from the genes originates from tow sources:
+the metadata from the genes originates from two sources:
 
 * already provided with the available counts
 * from biomart (Ensembl)
@@ -118,13 +119,13 @@ So before merging the new annotation data into the `se` to get the "entrezgene_i
 to later do the pathway enrichment.
 
 ```{r}
-df <- merge(annot, rowData(se), by.x = 1, by.y = 0) %>%
+df <- merge(annot, rowData(se.gastroc), by.x = 1, by.y = 0) %>%
   as.data.frame()
 ```
 
 ## biotypes:
 ```{r}
-cols <- c("ensembl_gene_id","gene_biotype.x", "gene_biotype.y")
+cols <- c("GeneID","gene_biotype.x", "gene_biotype.y")
 dif_biotypes <- !df$gene_biotype.x == df$gene_biotype.y
 print(paste0("There are ", sum(dif_biotypes), " genes annotated with different biotypes"))
 df[(dif_biotypes),cols] %>% head(20)
@@ -136,7 +137,7 @@ biological sense.
 
 ## gene names
 ```{r}
-cols <- c("ensembl_gene_id", "external_gene_name", "gene_name")
+cols <- c("GeneID", "external_gene_name", "gene_name")
 dif_names <- !df$external_gene_name == df$gene_name
 print(paste0("There are ", sum(dif_names), " genes annotated with different gene names"))
 df[(dif_names), cols] %>% head(20)
@@ -149,7 +150,7 @@ Not as many differences as the biotypes, and most of them seem to be synonyms:
 
 ## chromosome
 ```{r}
-cols <- c("ensembl_gene_id", "chromosome_name", "gene_chr", "external_gene_name", "gene_name")
+cols <- c("GeneID", "chromosome_name", "gene_chr", "external_gene_name", "gene_name")
 df[(!df$chromosome_name == df$gene_chr), cols] %>% head(20)
 ```
 
@@ -221,9 +222,63 @@ Gene length was not compared, since no field was available and subtracting the
 start from the end position would not make sense (introns would probably 
 get counted as well).
 
+
+# reviewing annotations:
+Here just a quick view at duplicate
+
+```{r}
+# getting all genes which have entrez gene id assigned
+rdata.entrez <- as.data.frame(rowData(se.gastroc)) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    left_join(annot, by=c("GeneID")) %>%
+    filter(!is.na(entrezgene_id))
+
+print(paste0(nrow(rdata.entrez), "/", nrow(se.gastroc), " genes were annotated with entrez gene ids"))
+
+# getting duplicate
+dups.entrez <- rdata.entrez$entrezgene_id %>%
+  base::duplicated() %>%
+  which() %>%
+  rdata.entrez$entrezgene_id[.]
+
+subset(rdata.entrez, entrezgene_id %in% dups.entrez) %>%
+  dplyr::select(GeneID, entrezgene_id, external_gene_name) %>%
+  arrange(entrezgene_id, )
+```
+
+ENSMUS identifier are mostly transcripts of genes. Thus there are some genes
+mapping to multiple ENSMUS ids.
+
+# duplicate ENSMUS
+
+```{r}
+dups.GeneID <- annot$GeneID %>%
+  base::duplicated() %>%
+  which() %>%
+  annot$GeneID[.]
+
+subset(annot, GeneID %in% dups.GeneID) %>%
+  dplyr::select(GeneID, entrezgene_id, external_gene_name) %>%
+  arrange(GeneID, )
+
+dups <- annot %>%
+  dplyr::select("GeneID", "external_gene_name") %>%
+  duplicated()
+
+# this implies some genes can be annotated with several pathways and rowData can't just be extended
+# does something
+
+annot <- annot[!dups,]
+annot.backup <- annot
+```
+
+
+
+
 # save Data
 
 ```{r}
+# TODO: merge `annot` into se metadata, rowData is not compatible?
 save(annot, file = "./data/Robjects/02_annot.RData")
 ```
 
