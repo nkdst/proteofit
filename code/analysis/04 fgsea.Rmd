@@ -12,121 +12,228 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
-library(ggplot2)
 library(fgsea)
-library(DESeq2)
+library(ggplot2)
 ```
 
+```{r}
+load("./data/Robjects/02_annot.RData")
+load("./data/Robjects/03_DDS.RData")
+```
 
+# reviewing annotations:
 
 ```{r}
-# load("./data/Robjects/Annotated_Results_LvV.RData")
-# load("./data/Robjects/Ensembl_annotations.RData")
-# load("./data/Robjects/DE.RData")
-load("./data/Robjects/01_DDS.RData")
-load("./data/Robjects/02_annot.RData")
+# TODO: move to annotation file
 
 annot <- dplyr::rename(annot, GeneID=ensembl_gene_id)
+
+res.gastroc.annot <- as.data.frame(res.gastroc) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
+    left_join(annot, by=c("GeneID")) %>%
+    filter(!is.na(entrezgene_id))
+
+dups.entrez <- res.gastroc.annot$entrezgene_id %>%
+  base::duplicated() %>%
+  which() %>%
+  res.gastroc.annot$entrezgene_id[.]
+
+subset(res.gastroc.annot, entrezgene_id %in% dups.entrez) %>%
+  select(GeneID, entrezgene_id, external_gene_name) %>%
+  arrange(entrezgene_id, )
 ```
 
 
 # creating ranks
 
-```{r}
-res.gastroc <- results(dds.gastroc, alpha=0.05)
-res.soleus <- results(dds.soleus, alpha=0.05)
-head(res.gastroc)
-head(res.soleus)
-```
+-   adding annotations (entrez id, ...) to results table: ...
+-   using `stat` (Wald Test), as ranks metric
+
 
 
 ```{r}
-gastroc <- readr::read_tsv("./data/readcount_genename_gastroc.xls") %>%
-  tibble::column_to_rownames(var = "gene_id")
+getRanks <- function(res, annot) {
+  res.annot <- as.data.frame(res) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
+    left_join(annot, "GeneID") %>%
+    filter(!is.na(entrezgene_id))
+  
+  ranks <- res.annot$stat
+  names(ranks) <- res.annot$entrezgene_id
+  return(ranks)
+}
 
-# renaming
-gastroc <-
-  as.data.frame(res.gastroc) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  dplyr::rename(logFC=log2FoldChange, FDR=padj) %>%
-  left_join(annot, "GeneID")
+ranks.gastroc <- getRanks(res.gastroc, annot)
 
-soleus <-
-  as.data.frame(res.soleus) %>%
-  tibble::rownames_to_column("GeneID") %>% 
-  dplyr::rename(logFC=log2FoldChange, FDR=padj) %>%
-  left_join(annot, "GeneID")
+ranks.soleus <- getRanks(res.soleus, annot)
 ```
 
+## barplots of ranks
 
 ```{r}
-gseaDat.gastroc <- filter(gastroc, !is.na(entrezgene_id))
-ranks.gastroc <- gseaDat.gastroc$logFC
-names(ranks.gastroc) <- gseaDat.gastroc$entrezgene_id
+# no idea how to plot this with ggplot (one column) ...
 
-
-gseaDat.soleus <- filter(soleus, !is.na(entrezgene_id))
-ranks.soleus <- gseaDat.soleus$logFC
-names(ranks.soleus) <- gseaDat.soleus$entrezgene_id
+# ggpubr::ggarrange(
+  barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
+  barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
+# )
 ```
 
+# loading pathways
+
+Pathways are provided by <http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp>
+
+For now the Canonical pathways are used. These gene sets represent biological a biological process. They are composed from the following databases taking a subset of CP:
+
+| database     | gene sets |
+|--------------|-----------|
+| BioCarta     | 252       |
+| Reactome     | 1249      |
+| WikiPathways | 186       |
 
 ```{r}
-barplot(sort(ranks.gastroc, decreasing = T))
-barplot(sort(ranks.soleus, decreasing = T))
+# MH <- qusage::read.gmt("./data/pathways/mh.all.v2022.1.Mm.entrez.gmt") # 50 hallmark genes
+# M2 <- qusage::read.gmt("./data/pathways/m2.all.v2022.1.Mm.entrez.gmt") # curated gene set with 2600 genes
+CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonical pathways (1687 gene sets)
 ```
 
-# load pathways
-Pathways are provided by http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp
-
-for now only the hallmark genes are being used
-```{r}
-# load("./data/Robjects/mouse_H_v5.RData")
-MH <- qusage::read.gmt("./data/mh.all.v2022.1.Mm.entrez.gmt")
-```
-
+# applying fgsea
 
 ```{r }
-fgseaRes <- fgsea(pathways = MH, 
+fgseaRes <- fgsea(pathways = CGP, 
                   stats    = ranks.gastroc,
                   minSize  = 15,
                   maxSize  = 500)
 ```
 
-
-
 ```{r}
-head(fgseaRes[order(padj, -abs(NES)), ], n=10)
+top.pathways <- head(fgseaRes[order(padj, -abs(NES)), ], n=9)
+top.pathways
 ```
 
 ## Enrichment score plot
 
+as example the gene with the
 
 ```{r}
-plotEnrichment(MH[["HALLMARK_ALLOGRAFT_REJECTION"]], ranks.gastroc)
+# TODO: plot the top 9 and add labels with description
+top1.pathway <- top.pathways[1]$pathway
+plotEnrichment(CGP[[top1.pathway]], ranks.gastroc) +
+  ggtitle(label=top1.pathway)
 ```
 
+```{r}
+library(ggpubr)
+library(gridExtra)
+
+# TODO: create plot for top up and down regulated pathways
+
+top9.pathways <- top.pathways[1:9]$pathway
+plot.list <- list()
+  lims <- list("x" = c(0,17000), "y" = c(-0.8,0.0))
+for (i in 1:length(top9.pathways)) {
+# TODO: how can I use facet_wrap for this?
+  pathway <- top9.pathways[i]
+  plt <- plotEnrichment(CGP[[pathway]], ranks.gastroc) +
+    # TODO: adjust yaxis to the same scale
+    # TODO: keep axis.text.x only on the lower row
+    # TODO: keep axis.text.y only on the right column
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+    ) +
+    coord_cartesian(xlim = lims$x, ylim = lims$y)
+  plot.list[[i]] <- plt
+}
+
+
+
+
+arrange_plts <- function(plt.list, plt.labels=T) {
+  nplts <- length(plt.list)
+  plt <- plt.list[1]
+  xlab <- plt$labels$x
+  ylab <- plt$labels$y
+  
+  
+  # set axis to the same scale
+  lims <- list("x" = c(0,17000), "y" = c(-0.8,0.0))
+  # for (plt in plt.list) {
+  #   # get maximal range for both axes
+  #   plt.limx <- layer_scales(plt)$x$range$range
+  #   lims$x <- c(max(plt.limx[1], lims$x[1]), min(plt.limx[2], lims$x[2]))
+  #   print(plt.limx)
+  #   
+  #   plt.limy <- layer_scales(plt)$y$range$range
+  #   lims$y <- c(min(plt.limy[1], lims$y[1]), max(plt.limy[2], lims$y[2]))
+  #   print(plt.limy)
+  # }
+  
+  # for (i in 1:nplts) {
+  #   plt.list[i] <- plt.list[i] + coord_cartesian(xlim = lims$x, ylim = lims$y)
+  # }
+ 
+  # remove axis
+  
+  # arrange the plots
+  fig_labels <- ifelse(plt.labels, "", LETTERS[1:nplts])
+  figure <- ggpubr::ggarrange(plotlist = plt.list,
+                              labels = fig_labels) %>% 
+    annotate_figure(
+                  left = text_grob(ylab, rot = 90),
+                  bottom = text_grob(xlab)
+                  )
+  
+  return(figure)
+}
+
+
+arrange_plts(plot.list, plt.labels = top9.pathways)
+
+plot_labels <-
+    data.frame("label" = LETTERS[1:9], "pathway" = top9.pathways)
+knitr::kable(caption = "plot labels", plot_labels)
+```
 
 
 ## GSEA table plot
 
-```{r}
-topUp <- fgseaRes %>% 
-    filter(ES > 0) %>% 
-    top_n(10, wt=-padj)
-topDown <- fgseaRes %>% 
-    filter(ES < 0) %>% 
-    top_n(10, wt=-padj)
-topPathways <- bind_rows(topUp, topDown) %>% 
-    arrange(-ES)
-# topPathways <- c(topUp, rev(topDown))
+all significant pathways:
 
-e <- plotGseaTable(
-  pathways = MH[topPathways$pathway],
+```{r}
+topUp <- fgseaRes %>%
+  filter(ES > 0, padj < 0.01) %>%
+  # arrange(padj)
+  dplyr::top_n(15, wt=-padj)
+topDown <- fgseaRes %>%
+  filter(ES < 0, padj < 0.01) %>%
+  # arrange(padj)
+  dplyr::top_n(15, wt=-padj)
+topPathways <- bind_rows(topUp, topDown) %>%
+  arrange(-ES) %>%
+  pull(pathway)
+
+# topPathways <- fgseaRes %>%
+#   filter(padj < 0.01) %>%
+#   arrange(padj) %>%
+#   pull(pathway)
+
+plotGseaTable(
+  pathways = CGP[topPathways],
   stats = ranks.gastroc,
   fgseaRes = fgseaRes,
-  gseaParam = 0.5
-)
-e
+  gseaParam = 0.5,
+  render = TRUE
+) %>%
+  ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
+```
+
+
+## 
+
+```{r}
+
 ```
 
