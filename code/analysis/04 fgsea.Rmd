@@ -16,33 +16,12 @@ library(fgsea)
 library(ggplot2)
 ```
 
+
 ```{r}
 load("./data/Robjects/02_annot.RData")
 load("./data/Robjects/03_DDS.RData")
 ```
 
-# reviewing annotations:
-
-```{r}
-# TODO: move to annotation file
-
-annot <- dplyr::rename(annot, GeneID=ensembl_gene_id)
-
-res.gastroc.annot <- as.data.frame(res.gastroc) %>%
-    tibble::rownames_to_column("GeneID") %>%
-    dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
-    left_join(annot, by=c("GeneID")) %>%
-    filter(!is.na(entrezgene_id))
-
-dups.entrez <- res.gastroc.annot$entrezgene_id %>%
-  base::duplicated() %>%
-  which() %>%
-  res.gastroc.annot$entrezgene_id[.]
-
-subset(res.gastroc.annot, entrezgene_id %in% dups.entrez) %>%
-  select(GeneID, entrezgene_id, external_gene_name) %>%
-  arrange(entrezgene_id, )
-```
 
 
 # creating ranks
@@ -57,8 +36,8 @@ getRanks <- function(res, annot) {
   res.annot <- as.data.frame(res) %>%
     tibble::rownames_to_column("GeneID") %>%
     dplyr::rename(logFC = log2FoldChange, FDR = padj) %>%
-    left_join(annot, "GeneID") %>%
-    filter(!is.na(entrezgene_id))
+    left_join(filter(annot,!is.na(entrezgene_id)),
+              "GeneID") 
   
   ranks <- res.annot$stat
   names(ranks) <- res.annot$entrezgene_id
@@ -149,8 +128,6 @@ for (i in 1:length(top9.pathways)) {
 }
 
 
-
-
 arrange_plts <- function(plt.list, plt.labels=T) {
   nplts <- length(plt.list)
   plt <- plt.list[1]
@@ -160,21 +137,7 @@ arrange_plts <- function(plt.list, plt.labels=T) {
   
   # set axis to the same scale
   lims <- list("x" = c(0,17000), "y" = c(-0.8,0.0))
-  # for (plt in plt.list) {
-  #   # get maximal range for both axes
-  #   plt.limx <- layer_scales(plt)$x$range$range
-  #   lims$x <- c(max(plt.limx[1], lims$x[1]), min(plt.limx[2], lims$x[2]))
-  #   print(plt.limx)
-  #   
-  #   plt.limy <- layer_scales(plt)$y$range$range
-  #   lims$y <- c(min(plt.limy[1], lims$y[1]), max(plt.limy[2], lims$y[2]))
-  #   print(plt.limy)
-  # }
   
-  # for (i in 1:nplts) {
-  #   plt.list[i] <- plt.list[i] + coord_cartesian(xlim = lims$x, ylim = lims$y)
-  # }
- 
   # remove axis
   
   # arrange the plots
@@ -203,22 +166,16 @@ knitr::kable(caption = "plot labels", plot_labels)
 all significant pathways:
 
 ```{r}
+# creating up and down regulated pathway vectors separately to maintain order
 topUp <- fgseaRes %>%
   filter(ES > 0, padj < 0.01) %>%
-  # arrange(padj)
-  dplyr::top_n(15, wt=-padj)
+  dplyr::top_n(10, wt=-padj)
 topDown <- fgseaRes %>%
   filter(ES < 0, padj < 0.01) %>%
-  # arrange(padj)
-  dplyr::top_n(15, wt=-padj)
+  dplyr::top_n(10, wt=-padj)
 topPathways <- bind_rows(topUp, topDown) %>%
   arrange(-ES) %>%
   pull(pathway)
-
-# topPathways <- fgseaRes %>%
-#   filter(padj < 0.01) %>%
-#   arrange(padj) %>%
-#   pull(pathway)
 
 plotGseaTable(
   pathways = CGP[topPathways],
@@ -228,12 +185,5 @@ plotGseaTable(
   render = TRUE
 ) %>%
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
-```
-
-
-## 
-
-```{r}
-
 ```
 
