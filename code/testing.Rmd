@@ -3,13 +3,119 @@ title: "testing"
 author: "Nick Diercksen"
 date: "2022-10-10"
 output: html_document
+params:
+  FCutoff:
+    label: cutoff for the log2FoldChange
+    value: 1
+  pCutoff:
+    label: "cutoff for the adjusted p-Value"
+    value: 0.01
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.width = 9,
+                      fig.height = 9,
+                      fig.retina = 2, dpi = 100)
+# knitr::opts_knit$set(root.dir = rprojroot::find_root(".Rhistory"))
 ```
 
 ## some title
 
 $x -\frac{ mean(x)}{sd(x)}$
 
+```{r checkingStuff, warning=TRUE}
+FCutoff > 0
+warning("current wd: ", getwd())
+
+# now the grDevice size
+interactive()
+warning("grDevice size: ", grDevices::dev.size())
+```
+
+```{r}
+load("./data/Robjects/03_DDS.RData")
+```
+
+
+Adjusting the size of plots, by using the chunk parameters causes some inconsistencies
+when using different screen resolutions. Thus it might be better to save plots with exact
+resolution.
+Some relating discussions can be found here:
+
+* [plots on different monitors](https://github.com/rstudio/rmarkdown/issues/1827)
+* [true plots gist](https://gist.github.com/debruine/baa61e561935d5e0df1ea0f294399c6c)
+
+```{r volcanoPlot, warning=FALSE}
+volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
+  gene_names <-
+    rowData(se)[rownames(result), c("gene_name"), drop = F]
+  results.df <- result %>%
+    as.data.frame() %>%
+    dplyr::arrange(padj)
+  
+  # top 10 gene labels for respectively up and down regulation
+  labs.up <- results.df[results.df$log2FoldChange > FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  labs.down <- results.df[results.df$log2FoldChange < -FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique() # always including "Nfe2l1"
+  
+  # custom colors:
+  keyvals <- ifelse(
+    result$log2FoldChange < -FCutoff &
+      result$padj < pCutoff,
+    'royalblue',
+    ifelse(
+      result$log2FoldChange > FCutoff &
+        result$padj < pCutoff,
+      'red',
+      'gray'
+    )
+  )
+  keyvals[is.na(keyvals)] <- 'gray'
+  names(keyvals)[keyvals == 'red'] <- 'up regulated'
+  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
+  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
+  
+  vlc.plt <- EnhancedVolcano(
+    result,
+    x = 'log2FoldChange',
+    y = 'padj',
+    title = 'WT vs KO: Nfe2l1 knockout',
+    subtitle = ifelse(isEmpty(tissue), "", paste0('tissue: ', tissue)),
+    caption = "",
+    ylab = expression(paste(-Log[10], p[adj])),
+    pCutoff = pCutoff,
+    FCcutoff = FCutoff,
+    legendPosition = 'right',
+    pointSize = 2,
+    colCustom = keyvals,
+    lab = gene_names$gene_name,
+    selectLab = selectLab,
+    labSize = 3,
+    boxedLabels = TRUE,
+    drawConnectors = TRUE,
+    max.overlaps = Inf
+  )
+  
+  return(vlc.plt)
+}
+
+pCutoff <- 0.01
+FCutoff <- 1
+
+se.gastroc <- readRDS("data/Robjects/01_se.gastroc.rds")
+# se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
+se.soleus <- readRDS("data/Robjects/01_se.soleus.rds")
+
+library(SummarizedExperiment)
+library(dplyr)
+library(EnhancedVolcano)
+
+volcanoPlot(res.gastroc, se.gastroc, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "gastrocnemius")
+
+# volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "soleus")
+
+```
