@@ -43,6 +43,7 @@ getRanks <- function(res, annot) {
   names(ranks) <- res.annot$entrezgene_id
   return(ranks)
 }
+# TODO: sort the ranks!
 
 ranks.gastroc <- getRanks(res.gastroc, annot)
 

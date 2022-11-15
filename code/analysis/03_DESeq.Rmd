@@ -1,0 +1,391 @@
+---
+title: "03_DESeq"
+author: "Nick Diercksen"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+params:
+  FCutoff:
+    label: cutoff for the log2FoldChange
+    value: 1
+  pCutoff:
+    label: "cutoff for the adjusted p-Value"
+    value: 0.01
+  knittingParameters:
+    label: "helper variable for knitting, should not be changed"
+    value: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(DESeq2)
+library(SummarizedExperiment)
+library(EnhancedVolcano)
+library(ggVennDiagram)
+```
+
+
+```{r parameters, include=FALSE}
+if (! exists("knittingParameters")) {
+  # when knitting with parameters the following variables are already set
+  FCutoff <- 1
+  pCutoff <- 0.01
+} 
+```
+
+
+```{r plotSettings, include=FALSE}
+customColors <- c("WT"= "#00C3C6","KO"= "#FF6C67")
+```
+
+# DESeq
+
+## loading data
+
+For the DESeq2 analysis, the raw, prefiltered counts will be used.
+
+```{r loadRDS}
+se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
+se.soleus <- readRDS("./data/Robjects/01_se.soleus.rds")
+
+counts.gastroc <- se.gastroc[rowData(se.gastroc)$filtered,] %>% assay()
+counts.soleus <- se.soleus[rowData(se.soleus)$filtered,] %>% assay()
+metadata <- colData(se.gastroc)
+```
+
+## preparing DDS objects
+
+```{r prepDDS, message=FALSE, warning=FALSE}
+createDDSObject <- function(counts, metadata) {
+  # select sample columns
+  reorder_index <- match(rownames(metadata), colnames(counts))
+  counts <- counts[,reorder_index]
+  
+  # Check metadata consistency
+  all(rownames(metadata) %in% colnames(counts)) %>%
+    assertthat::assert_that(., msg = "metadata and count table do not match")
+  
+  ## DESeq2 object
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = metadata,
+                                design = ~ genotype)
+  
+  return( DESeq(dds) )
+}
+
+# creating DESeq Objects
+dds.gastroc <- createDDSObject(counts.gastroc, metadata)
+dds.soleus <- createDDSObject(counts.soleus, metadata)
+
+# creating SESeqg Objects from SE
+# dds.gastroc.se <- DESeqDataSet(se.gastroc, design = ~ genotype)
+# dds.soleus.se <- DESeqDataSet(se.soleus, design = ~ genotype)
+```
+
+# Results
+
+```{r results}
+res.gastroc <- results(dds.gastroc, alpha = pCutoff, contrast = c("genotype", "KO", "WT"))
+res.soleus <- results(dds.soleus, alpha = pCutoff, contrast = c("genotype", "KO", "WT"))
+```
+
+## MA-Plots
+
+### gastroc
+
+```{r ma.gastroc, message=FALSE, warning=FALSE}
+plotMA(res.gastroc)
+```
+
+### soleus
+
+```{r ma.soleus, message=FALSE, warning=FALSE}
+plotMA(res.soleus)
+```
+
+## Dispersion Estimates
+
+### gastroc
+
+```{r dispEst.gastroc}
+plotDispEsts(dds.gastroc)
+```
+
+### soleus
+
+```{r dispEst.soleus}
+plotDispEsts(dds.soleus)
+```
+
+### top significant diff. genes
+
+```{r topDiffGenes.df}
+topGenes.gastroc <- as.data.frame(res.gastroc) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+topGenes.soleus <- as.data.frame(res.soleus) %>%
+  tibble::rownames_to_column("GeneID") %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+knitr::kable(head(topGenes.gastroc), caption = "gastroc")
+knitr::kable(head(topGenes.soleus), caption = "soleus")
+```
+
+### p-values
+
+```{r pValuesHist}
+hist(res.gastroc$pvalue, main = "gastroc")
+hist(res.soleus$pvalue, main = "soleus")
+```
+
+### Volcano Plot
+```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
+  gene_names <-
+    rowData(se)[rownames(result), c("gene_name"), drop = F]
+  results.df <- result %>%
+    as.data.frame() %>%
+    dplyr::arrange(padj)
+  
+  # top 10 gene labels for respectively up and down regulation
+  labs.up <- results.df[results.df$log2FoldChange > FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  labs.down <- results.df[results.df$log2FoldChange < -FCutoff, ] %>%
+    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
+  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique() # always including "Nfe2l1"
+  
+  # custom colors:
+  keyvals <- ifelse(
+    result$log2FoldChange < -FCutoff &
+      result$padj < pCutoff,
+    'royalblue',
+    ifelse(
+      result$log2FoldChange > FCutoff &
+        result$padj < pCutoff,
+      'red',
+      'gray'
+    )
+  )
+  keyvals[is.na(keyvals)] <- 'gray'
+  names(keyvals)[keyvals == 'red'] <- 'up regulated'
+  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
+  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
+  
+  vlc.plt <- EnhancedVolcano(
+    result,
+    x = 'log2FoldChange',
+    y = 'padj',
+    title = 'WT vs KO: Nfe2l1 knockout',
+    subtitle = ifelse(isEmpty(tissue), "", paste0('tissue: ', tissue)),
+    caption = "",
+    ylab = expression(paste(-Log[10], p[adj])),
+    pCutoff = pCutoff,
+    FCcutoff = FCutoff,
+    legendPosition = 'right',
+    pointSize = 2,
+    colCustom = keyvals,
+    lab = gene_names$gene_name,
+    selectLab = selectLab,
+    labSize = 3,
+    boxedLabels = TRUE,
+    drawConnectors = TRUE,
+    max.overlaps = Inf
+  )
+  
+  return(vlc.plt)
+}
+
+
+volcanoPlot(res.gastroc, se.gastroc, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "gastrocnemius")
+
+volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "soleus")
+
+```
+
+### top differential expressed genes
+
+```{r topDiffGenes}
+setBold <- function(src, special_labs) {
+  # source: https://stackoverflow.com/questions/39694490/highlighting-individual-axis-labels-in-bold-using-ggplot2
+  if (!is.factor(src)) src <- factor(src)                   
+  src_levels <- base::levels(src)                          
+  brave <- special_labs %in% src_levels                   
+  b_vec <- rep("plain", length(src_levels))              
+  if (all(brave)) {                                     
+    b_pos <- purrr::map_int(special_labs, ~which(.==src_levels))
+    b_vec[b_pos] <- "bold"
+    b_vec
+  } else {
+    message("setBold: no matching element found")
+  }
+  return(b_vec)
+}
+
+getTopExpressedEnsemblNames <-
+  function(result,
+           FCutoff,
+           n,
+           up = T) {
+    .filter <- ifelse(up, `>`, `<`)
+    
+    subset(result, .filter(log2FoldChange, FCutoff)) %>%
+      data.frame() %>%
+      filter(baseMean > 100) %>%
+      arrange(padj) %>%
+      .[1:n, ] %>%
+      rownames()
+  }
+
+boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, tissue ="") {
+  # getting the top n regulated genes
+  names.top <- getTopExpressedEnsemblNames(result, FCutoff=FCutoff, n=n, up = upregulated)
+  
+  counts.top <- counts(dds, normalized=T)[names.top, ]
+  metadata <- colData(se) %>% as.data.frame()
+  gene_names <- rowData(se)[, c("gene_name"), drop = F] %>% as.data.frame()
+  
+  counts.plt <-
+    data.frame(counts.top) %>%
+    tibble::rownames_to_column(var = "ensembl") %>%
+    tidyr::gather(key = "samplename",
+           value = "normalized_counts", 2:13) %>%
+    merge(metadata, by.x="samplename", by.y=0) %>%
+    merge(gene_names, by.x="ensembl", by.y=0)  %>%
+    mutate(genotype = factor(genotype)) %>%
+    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed befor "KO"
+    mutate(gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T))
+  
+  direction <- ifelse(upregulated, "up", "down")
+  
+  ggplot(counts.plt,
+         aes(
+           x = as.factor(gene_name),
+           y = normalized_counts,
+           fill = genotype
+         )) +
+    geom_dotplot(
+      binaxis = 'y',
+      stackdir = 'center',
+      dotsize = 0.3,
+      position = position_dodge(0.8),
+      fill = "black"
+    ) +
+    geom_boxplot(outlier.size = 0.3) +
+    scale_y_log10() +
+    xlab("Genes") +
+    ylab("Normalized Counts") +
+    scale_fill_manual(values = customColors) +
+    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      face = setBold(counts.plt$gene_name, c("Nfe2l1"))
+    ))
+}
+```
+
+#### gastroc
+
+```{r topDiffBox.gastroc, warning=FALSE, message=FALSE}
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastroc")
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastroc")
+```
+
+#### soleus
+
+```{r topDiffBox.soleus, warning=FALSE, message=FALSE}
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
+```
+
+### most differential genes, both tissues
+
+using the Wald-test `stat` from the DESeq2 result and filtering on the set
+`FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
+```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+prepare_result <- function(res, colname="stat", FCutoff, pCutoff) {
+  res.prep <- res %>%
+    data.frame() %>%
+    filter(padj < pCutoff,
+           log2FoldChange > FCutoff | log2FoldChange < -FCutoff) %>%
+    dplyr::rename(!!colname := stat) %>%
+    dplyr::select(!!colname)
+  return(res.prep)
+}
+
+prep.gastroc <- prepare_result(res.gastroc, colname="gastroc", FCutoff, pCutoff)
+prep.soleus  <- prepare_result(res.soleus,  colname="soleus",  FCutoff, pCutoff)
+
+
+gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
+  dplyr::select(gene_name)
+
+# combining wald-Test data from both tissues and ordering in quadrants
+res.combined <- merge(prep.gastroc,
+                      prep.soleus,
+                      by = 0) %>%
+  mutate(diff.exp = case_when(
+    gastroc < 0 & soleus < 0 ~ "both down",
+    gastroc > 0 & soleus > 0 ~ "both up",
+    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
+    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
+    TRUE ~ "different"
+  )) %>% 
+  merge(gene_names, by.x="Row.names", by.y=0)
+ 
+# removing all gene_names except the top_n_genes (sum of absolute Wald-test numbers)
+top_n_genes <- 10
+top_labels <- res.combined %>%
+  group_by(diff.exp) %>% 
+  arrange(desc(abs(gastroc) + abs(soleus))) %>%
+  filter(row_number() %in% c(1:top_n_genes)) %>% 
+  ungroup() %>% 
+  .$gene_name
+
+res.combined <- res.combined %>% 
+  mutate(gene_name = ifelse(gene_name %in% top_labels, gene_name, ""))
+
+# final plot
+ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  labs(x = "gastroc", y = "soleus") +
+  ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "stat (Wald test)")
+```
+#### barplot
+
+```{r diffGenesBarPlot}
+ggplot(res.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp))
+```
+
+
+# save R ojects
+
+```{r saving_R_objects}
+save(dds.gastroc, dds.soleus, res.gastroc, res.soleus, file = "./data/Robjects/03_DDS.RData")
+```
+
+# Questions
+
+-   should the boxplots be sorted after the counts, as they currently are?
+-   what is/can be the title of the scatter plot?

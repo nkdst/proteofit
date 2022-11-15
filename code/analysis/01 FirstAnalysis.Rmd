@@ -38,7 +38,9 @@ library(SummarizedExperiment)
 ## Preparing data
 
 ```{r}
-gastroc <- readr::read_tsv("./data/counts/readcount_genename_gastroc.xls", show_col_types = F) %>%
+gastroc <-
+  readr::read_tsv("./data/counts/readcount_genename_gastroc.xls",
+                  show_col_types = F) %>%
   tibble::column_to_rownames(var = "gene_id")
 counts.gastroc <- gastroc[, 1:12]
 
