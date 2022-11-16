@@ -2,7 +2,9 @@
 title: "testing"
 author: "Nick Diercksen"
 date: "2022-10-10"
-output: html_document
+output:
+  html_document:
+    df_print: paged
 params:
   FCutoff:
     label: cutoff for the log2FoldChange
@@ -10,6 +12,13 @@ params:
   pCutoff:
     label: "cutoff for the adjusted p-Value"
     value: 0.01
+  knitting_parameters_used:
+    label: helper variable for knitting, should not be changed
+    value: yes
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
 ---
 
 ```{r setup, include=FALSE}
@@ -20,6 +29,17 @@ knitr::opts_chunk$set(echo = TRUE,
                       fig.retina = 2, dpi = 100)
 # knitr::opts_knit$set(root.dir = rprojroot::find_root(".Rhistory"))
 ```
+
+
+```{r parameters, include=FALSE}
+if (! exists("knitting_parameters_used")) {
+  # when knitting with parameters the following variables are already set
+  FCutoff <- 1
+  pCutoff <- 0.01
+  reevaluate <- FALSE
+} 
+```
+
 
 ## some title
 
@@ -34,7 +54,8 @@ interactive()
 warning("grDevice size: ", grDevices::dev.size())
 ```
 
-```{r}
+
+```{r, eval=reevaluate}
 load("./data/Robjects/03_DDS.RData")
 ```
 
@@ -47,75 +68,52 @@ Some relating discussions can be found here:
 * [plots on different monitors](https://github.com/rstudio/rmarkdown/issues/1827)
 * [true plots gist](https://gist.github.com/debruine/baa61e561935d5e0df1ea0f294399c6c)
 
-```{r volcanoPlot, warning=FALSE}
-volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
-  gene_names <-
-    rowData(se)[rownames(result), c("gene_name"), drop = F]
-  results.df <- result %>%
-    as.data.frame() %>%
-    dplyr::arrange(padj)
-  
-  # top 10 gene labels for respectively up and down regulation
-  labs.up <- results.df[results.df$log2FoldChange > FCutoff, ] %>%
-    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
-  labs.down <- results.df[results.df$log2FoldChange < -FCutoff, ] %>%
-    rownames() %>% .[1:10] %>% gene_names[., c("gene_name")]
-  selectLab <- c(labs.up, labs.down, "Nfe2l1") %>% unique() # always including "Nfe2l1"
-  
-  # custom colors:
-  keyvals <- ifelse(
-    result$log2FoldChange < -FCutoff &
-      result$padj < pCutoff,
-    'royalblue',
-    ifelse(
-      result$log2FoldChange > FCutoff &
-        result$padj < pCutoff,
-      'red',
-      'gray'
-    )
-  )
-  keyvals[is.na(keyvals)] <- 'gray'
-  names(keyvals)[keyvals == 'red'] <- 'up regulated'
-  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
-  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
-  
-  vlc.plt <- EnhancedVolcano(
-    result,
-    x = 'log2FoldChange',
-    y = 'padj',
-    title = 'WT vs KO: Nfe2l1 knockout',
-    subtitle = ifelse(isEmpty(tissue), "", paste0('tissue: ', tissue)),
-    caption = "",
-    ylab = expression(paste(-Log[10], p[adj])),
-    pCutoff = pCutoff,
-    FCcutoff = FCutoff,
-    legendPosition = 'right',
-    pointSize = 2,
-    colCustom = keyvals,
-    lab = gene_names$gene_name,
-    selectLab = selectLab,
-    labSize = 3,
-    boxedLabels = TRUE,
-    drawConnectors = TRUE,
-    max.overlaps = Inf
-  )
-  
-  return(vlc.plt)
+# testing plotly
+### most differential regulated pathways, both tissues
+
+
+```{r}
+fgseaRes.gastroc <- readRDS(file="./data/Robjects/04_fgseaRes.gastroc.rds")
+fgseaRes.soleus <- readRDS(file="./data/Robjects/04_fgseaRes.soleus.rds")
+```
+
+
+```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+prepare_result <- function(fgseaRes, colname="NES", pCutoff) {
+  fgseaRes.prep <- fgseaRes %>%
+    data.frame() %>%
+    filter(padj < pCutoff) %>%
+    dplyr::rename(!!colname := NES) %>%
+    dplyr::select(!!colname, pathway)
+  return(fgseaRes.prep)
 }
 
-pCutoff <- 0.01
-FCutoff <- 1
+prep.gastroc <- prepare_result(fgseaRes.gastroc, colname="gastroc", params$pCutoff)
+prep.soleus  <- prepare_result(fgseaRes.soleus,  colname="soleus", params$pCutoff)
 
-se.gastroc <- readRDS("data/Robjects/01_se.gastroc.rds")
-# se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
-se.soleus <- readRDS("data/Robjects/01_se.soleus.rds")
 
-library(SummarizedExperiment)
-library(dplyr)
-library(EnhancedVolcano)
+# combining wald-Test data from both tissues and ordering in quadrants
+res.combined <- merge(prep.gastroc,
+                      prep.soleus,
+                      by = "pathway") %>%
+  mutate(diff.exp = case_when(
+    gastroc < 0 & soleus < 0 ~ "both down",
+    gastroc > 0 & soleus > 0 ~ "both up",
+    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
+    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
+    TRUE ~ "different"
+  ))
 
-volcanoPlot(res.gastroc, se.gastroc, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "gastrocnemius")
+# final plot
+p <- ggplot(res.combined, aes(x = gastroc, y = soleus, text=pathway)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  labs(x = "gastroc", y = "soleus") +
+  # ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "NES")
 
-# volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "soleus")
-
+plotly::ggplotly(p,tooltip = "all")
+p
 ```
