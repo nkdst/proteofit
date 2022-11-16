@@ -22,6 +22,18 @@ rmarkdown::render(
   knit_root_dir = project.wd
 )
 
+# 04
+
+rmd.params <- list(pCutoff = pCutoff, reevaluate = T)
+filename.addition <- "_maxSize200_"
+rmarkdown::render(
+  file.path(path.analysis, "04_fgsea.Rmd"),
+  output_file = file.path(path.analysis, paste0("04_fgsea", filename.addition, ".html")),
+  output_dir = path.analysis,
+  output_format = "html_document",
+  params = rmd.params,
+  knit_root_dir = project.wd
+)
 
 # testing
 

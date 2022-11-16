@@ -1,0 +1,373 @@
+---
+title: "GSEA analysis"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+  html_document:
+    toc: yes
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+params:
+  pCutoff:
+    value: 0.01
+  fgsea.maxSize:
+    label: "parameter for `fgsea`: 'Maximal size of a gene set to test. All pathways above the threshold are excluded.'"
+    value: 200
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(fgsea)
+library(ggplot2)
+library(ggpubr)
+library(gridExtra)
+library(plotly, include.only = "ggplotly")
+```
+
+```{r load_rdata, include=FALSE}
+
+perform_fgsea <- params$reevaluate
+
+load("./data/Robjects/02_annot.RData") # for entrezgene_id
+load("./data/Robjects/03_DDS.RData")   # for `stat` values from DESeq results
+```
+
+# creating ranks
+
+the `ranks` will be a `named num`, with `entrezgene_id` as name and `stat` (Wald Test) as metric
+
+```{r getting_ranks}
+getRanks <- function(res, annot) {
+  # only taking genes which have entrezgene_ids assigned to them
+  genes_with_entrez <- select(annot, GeneID, entrezgene_id) %>% 
+    filter(!is.na(entrezgene_id))
+  
+  ranks <- as.data.frame(res) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    merge(genes_with_entrez, by = "GeneID") %>%
+    arrange(desc(stat)) %>% 
+    select(entrezgene_id, stat) %>% 
+    tibble::deframe() # creating a named num from two columns
+  return(ranks)
+}
+
+ranks.gastroc <- getRanks(res.gastroc, annot)
+ranks.soleus <- getRanks(res.soleus, annot)
+```
+
+## barplots of ranks
+
+```{r ranks_barplot, echo=FALSE}
+# no idea how to plot this with ggplot (one column) ...
+
+# ggpubr::ggarrange(
+  barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
+  barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
+# )
+```
+
+# loading pathways
+
+Pathways are provided by <http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp>
+
+For now the Canonical pathways are used. These gene sets represent biological a biological process. They are composed from the following databases taking a subset of CP:
+
+| database     | gene sets |
+|--------------|-----------|
+| BioCarta     | 252       |
+| Reactome     | 1249      |
+| WikiPathways | 186       |
+
+```{r reading_pathways, include=FALSE}
+CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonical pathways (1687 gene sets)
+
+# previously used pathways
+# MH <- qusage::read.gmt("./data/pathways/mh.all.v2022.1.Mm.entrez.gmt") # 50 hallmark genes
+# M2 <- qusage::read.gmt("./data/pathways/m2.all.v2022.1.Mm.entrez.gmt") # curated gene set with 2600 genes
+```
+
+
+# applying fgsea
+
+Here, using `maxSize = ` `r params$fgsea.maxSize`.
+```{r fgsea_sample, eval=FALSE}
+fgseaRes <- fgsea(
+  pathways = CGP,
+  stats    = ranks,
+  minSize  = 15,
+  maxSize  = 200 # (see above if other value was used)
+)
+```
+
+```{r fgsea_res_read, eval=!perform_fgsea, include=FALSE}
+tryCatch(
+  # load data from previous run
+  {
+    fgseaRes.gastroc <- readRDS(file="./data/Robjects/04_fgseaRes.gastroc.rds")
+    fgseaRes.soleus <- readRDS(file="./data/Robjects/04_fgseaRes.soleus.rds")
+  },
+  error=function(e) {
+    message("File(s) of previous fgseaResults could not be found")
+    message(e)
+    perform_fgsea <- T
+  }
+)
+```
+
+
+```{r fgsea_res_load, include=FALSE, eval=perform_fgsea}
+fgseaRes.gastroc <- fgsea(
+  pathways = CGP,
+  stats    = ranks.gastroc,
+  minSize  = 15,
+  maxSize  = params$fgsea.maxSize
+)
+
+fgseaRes.soleus <- fgsea(
+  pathways = CGP,
+  stats    = ranks.soleus,
+  minSize  = 15,
+  maxSize  = params$fgsea.maxSize
+)
+
+saveRDS(fgseaRes.gastroc, file="./data/Robjects/04_fgseaRes.gastroc.rds")
+saveRDS(fgseaRes.soleus, file = "./data/Robjects/04_fgseaRes.soleus.rds")
+```
+
+
+
+## Enrichment score plot
+
+
+ordering pathways by padj values and using `ES` to 
+
+```{r fn_get_top_pathways}
+# ' obtain top pathways ordered by padj and use `ES` for up or down regulation
+get_top_pathways <- function(fgseaRes, up = TRUE, pCutoff=0.01, n=10) {
+  .updown <- ifelse(up, `>`, `<`)
+  
+  top.pathways <- fgseaRes %>%
+    filter(.updown(ES,0), padj < pCutoff) %>%
+    arrange(padj) %>% 
+    slice_head(n=n)
+  
+ return(top.pathways) 
+}
+```
+
+
+plot for top up and down regulated pathways
+```{r}
+# ' plots top n enrichment plots for the given fgsea result
+plot_top_enrichment <- function(fgseaRes, pathways, ranks, n = 9, up = TRUE) {
+  # extracting the top n pathways
+  top.pathways <- get_top_pathways(fgseaRes, up=up, pCutoff=params$pCutoff, n=n)
+  
+  plot.list <- list()
+  # lims <- list("x" = c(0,17000), "y" = c(-0.8,0.0))
+  
+  for (i in 1:nrow(top.pathways)) {
+    # filling plot.list with enrichmentPlots 
+    # TODO: how can I use facet_wrap for this?
+    pathway <- top.pathways[i]$pathway
+    plt <- plotEnrichment(pathways[[pathway]], ranks) +
+      # TODO: adjust yaxis to the same scale
+      # TODO: keep axis.text.x only on the lower row
+      # TODO: keep axis.text.y only on the right column
+      theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+      ) # +
+      # coord_cartesian(xlim = lims$x, ylim = lims$y)
+    plot.list[[i]] <- plt
+  }
+    
+  arrange_plts(plot.list)
+}
+
+# ' helper function to arragen the plot from the enrichment
+arrange_plts <- function(plt.list) {
+  nplts <- length(plt.list)
+  plt <- plt.list[1]
+  xlab <- plt$labels$x
+  ylab <- plt$labels$y
+  
+  # set axis to the same scale
+  lims <- list("x" = c(0, 17000), "y" = c(-0.8, 0.0))
+  
+  # remove axis
+  
+  # arrange the plots
+  fig_labels <- LETTERS[1:nplts]
+  
+  figure <- ggpubr::ggarrange(plotlist = plt.list,
+                              labels = fig_labels) %>%
+    annotate_figure(left = text_grob(ylab, rot = 90),
+                    bottom = text_grob(xlab))
+  
+  return(figure)
+}
+
+
+
+# plot_labels <-
+#     data.frame("label" = LETTERS[1:10], "pathway" = top.pathways)
+# knitr::kable(caption = "plot labels", plot_labels)
+
+```
+
+
+### gastroc up
+```{r}
+plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=T)
+
+# TODO: add plot labels to return argument of plot_top_enrichment (use list probably)
+plot_labels <-
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.gastroc, up=T, n=9)$pathway)
+knitr::kable(caption = "plot labels", plot_labels)
+```
+
+### gastroc down
+```{r}
+plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=F)
+plot_labels <-
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.gastroc, up=F, n=9)$pathway)
+knitr::kable(caption = "plot labels", plot_labels)
+```
+
+### soleus up
+```{r}
+plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=T)
+
+plot_labels <-
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.soleus, up=T, n=9)$pathway)
+knitr::kable(caption = "plot labels", plot_labels)
+```
+
+### soleus down
+```{r}
+plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=F)
+plot_labels <-
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.soleus, up=F, n=9)$pathway)
+knitr::kable(caption = "plot labels", plot_labels)
+```
+
+
+## GSEA table plot
+### gastroc
+
+top significant pathways:
+
+```{r}
+# creating up and down regulated pathway vectors separately to maintain order
+
+topUp <- get_top_pathways(fgseaRes.gastroc, up=T, pCutoff = params$pCutoff, n=10)
+topDown <- get_top_pathways(fgseaRes.gastroc, up=F, pCutoff = params$pCutoff, n=10)
+topPathways <- bind_rows(topUp, topDown) %>%
+  arrange(-NES) %>%
+  pull(pathway)
+
+plotGseaTable(
+  pathways = CGP[topPathways],
+  stats = ranks.gastroc,
+  fgseaRes = fgseaRes.gastroc,
+  gseaParam = 0.5,
+  render = TRUE
+) %>%
+  ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
+```
+
+### soleus
+
+top significant pathways:
+
+```{r}
+# creating up and down regulated pathway vectors separately to maintain order
+
+topUp <- get_top_pathways(fgseaRes.soleus, up=T, pCutoff = params$pCutoff, n=10)
+topDown <- get_top_pathways(fgseaRes.soleus, up=F, pCutoff = params$pCutoff, n=10)
+topPathways <- bind_rows(topUp, topDown) %>%
+  arrange(-NES) %>%
+  pull(pathway)
+
+plotGseaTable(
+  pathways = CGP[topPathways],
+  stats = ranks.soleus,
+  fgseaRes = fgseaRes.soleus,
+  gseaParam = 0.5,
+  render = TRUE
+) %>%
+  ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
+```
+
+
+
+### most differential regulated pathways, both tissues
+
+using `NES` from the fgsea result filtering on the set `pCutoff=``r params$pCutoff` 
+yields the following plot:
+```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+prepare_result <- function(fgseaRes, colname="NES", pCutoff) {
+  fgseaRes.prep <- fgseaRes %>%
+    data.frame() %>%
+    filter(padj < pCutoff) %>%
+    dplyr::rename(!!colname := NES) %>%
+    dplyr::select(!!colname, pathway)
+  return(fgseaRes.prep)
+}
+
+prep.gastroc <- prepare_result(fgseaRes.gastroc, colname="gastroc", params$pCutoff)
+prep.soleus  <- prepare_result(fgseaRes.soleus,  colname="soleus", params$pCutoff)
+
+
+# combining wald-Test data from both tissues and ordering in quadrants
+res.combined <- merge(prep.gastroc,
+                      prep.soleus,
+                      by = "pathway") %>%
+  mutate(diff.exp = case_when(
+    gastroc < 0 & soleus < 0 ~ "both down",
+    gastroc > 0 & soleus > 0 ~ "both up",
+    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
+    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
+    TRUE ~ "different"
+  ))
+
+# only annotating top_n pathways by: 
+# removing all pathway_names except the top_n_pathways (sum of absolute NES numbers)
+# top_n_pathways <- 10
+# top_labels <- res.combined %>%
+#   group_by(diff.exp) %>% 
+#   arrange(desc(abs(gastroc) + abs(soleus))) %>%
+#   filter(row_number() %in% c(1:top_n_pathways)) %>% 
+#   ungroup() %>% 
+#   .$pathway
+
+# res.combined <- res.combined %>% 
+#   mutate(pathway = ifelse(pathway %in% top_labels, pathway, ""))
+
+# final plot
+p <- ggplot(res.combined, aes(x = gastroc, y = soleus, text=pathway)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  labs(x = "gastroc", y = "soleus") +
+  # ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "NES")
+
+plotly::ggplotly(p, tooltip = "all")
+```
+#### barplot
+
+```{r diffGenesBarPlot}
+ggplot(res.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp))
+```
