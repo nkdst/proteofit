@@ -2,13 +2,13 @@
 title: "03_DESeq"
 author: "Nick Diercksen"
 output:
-  html_document:
-    toc: yes
-    df_print: paged
   html_notebook:
     code_folding: hide
     toc: yes
     toc_float: yes
+    df_print: paged
+  html_document:
+    toc: yes
     df_print: paged
 editor_options:
   chunk_output_type: inline
@@ -19,7 +19,7 @@ params:
   pCutoff:
     label: "cutoff for the adjusted p-Value"
     value: 0.01
-  knittingParameters:
+  knitting_parameters_used:
     label: "helper variable for knitting, should not be changed"
     value: TRUE
 ---
@@ -37,10 +37,13 @@ library(ggVennDiagram)
 
 
 ```{r parameters, include=FALSE}
-if (! exists("knittingParameters")) {
+if (! exists("knitting_parameters_used")) {
   # when knitting with parameters the following variables are already set
   FCutoff <- 1
   pCutoff <- 0.01
+} {
+  FCutoff <- params$FCutoff
+  pCutoff <- params$pCutoff
 } 
 ```
 
