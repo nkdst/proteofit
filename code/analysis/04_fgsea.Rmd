@@ -63,7 +63,7 @@ ranks.gastroc <- getRanks(res.gastroc, annot)
 ranks.soleus <- getRanks(res.soleus, annot)
 ```
 
-## barplots of ranks
+## ranks distribution
 
 ```{r ranks_barplot, echo=FALSE}
 # no idea how to plot this with ggplot (one column) ...
@@ -73,6 +73,48 @@ ranks.soleus <- getRanks(res.soleus, annot)
   barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
 # )
 ```
+
+## duplicate entrezgene_ids
+duplicate entrezgene ids (multiple entrez are mapped to the same gene name)
+
+Thus a quick look if any of these genes can be simply omitted. Like if the 
+gene_type is "other" or "tRNA"
+
+```{r}
+# first looking at ENSEMBL:
+dup_rows <- duplicated(annot$GeneID) | duplicated(annot$GeneID, fromLast = T)
+anot_dup_ENS <- annot[dup_rows, ]
+dupENS_perGroup <- dplyr::group_by(anot_dup_ENS, GeneID + gene_biotype) %>% 
+  summarise(n = n())
+
+# looking at gene_names(ext):
+dup_rows <- duplicated(annot$external_gene_name) | duplicated(annot$external_gene_name, fromLast = T)
+anot_dup_geneN <- annot[dup_rows, ]
+
+
+# are all gene_name duplicates in ENS duplicates?
+sum(anot_dup_ENS$GeneID %in% anot_dup_geneN$GeneID) %>%
+  sprintf("%d / %d ENSEMBL duplications are also in the gene_name dups", ., nrow(anot_dup_ENS))
+
+diff_ENS_gene <- nrow(anot_dup_geneN) - nrow(anot_dup_ENS)
+
+
+```
+
+Since all ENSEMBL duplicates are also found in the gene_name duplicates, using
+the ENSEMBL as id for the ranks would reduce the number of duplicates by 
+`r diff_ENS_gene`.
+
+actually most of them are "protein coding" and will not be omitted.
+
+```{r}
+# TODO: do a e.g. bar-plot with the distribution of gene_biotypes of the duplicates
+#       vs the whole genome
+
+
+```
+
+
 
 # loading pathways
 
@@ -97,50 +139,54 @@ CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonic
 
 # applying fgsea
 
-Here, using `maxSize = ` `r params$fgsea.maxSize`.
-```{r fgsea_sample, eval=FALSE}
+```{}
 fgseaRes <- fgsea(
   pathways = CGP,
   stats    = ranks,
   minSize  = 15,
-  maxSize  = 200 # (see above if other value was used)
+  maxSize  = `r params$fgsea.maxSize`
 )
 ```
 
-```{r fgsea_res_read, eval=!perform_fgsea, include=FALSE}
-tryCatch(
-  # load data from previous run
-  {
-    fgseaRes.gastroc <- readRDS(file="./data/Robjects/04_fgseaRes.gastroc.rds")
-    fgseaRes.soleus <- readRDS(file="./data/Robjects/04_fgseaRes.soleus.rds")
-  },
-  error=function(e) {
-    message("File(s) of previous fgseaResults could not be found")
-    message(e)
-    perform_fgsea <- T
+
+```{r fgsea_res_load, include=FALSE}
+# ' returns the fgsea result
+# ' `tissue` needs to be one of {"gastroc", "soleus"}
+# ' Also saves the results locally to avoid too much queries
+get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
+  robjects.path <- file.path(".", "data", "Robjects")
+  fgseaRes.path <- file.path(
+    robjects.path,
+    "04_fgsea_results",
+    tissue,
+    paste0("maxSize_", params$fgsea.maxSize, ".rds")
+  )
+  fgseaRes.dir <- dirname(fgseaRes.path)
+  
+  if (file.exists(fgseaRes.path) & !params$reevaluate) {
+    message("fgsea result found in directory! Prvious version will be loaded ...")
+    return(readRDS(file = fgseaRes.path))
+  } else {
+    # perform fgsea and save the result
+    fgseaRes <- fgsea(
+      pathways = pathways,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = maxSize
+    )
+    
+    if (saveResults) {
+      if (!dir.exists(fgseaRes.dir))
+        dir.create(fgseaRes.dir, recursive = T)
+      saveRDS(fgseaRes, file = fgseaRes.path)
+    }
   }
-)
+}
+
+fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
+fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 ```
 
-
-```{r fgsea_res_load, include=FALSE, eval=perform_fgsea}
-fgseaRes.gastroc <- fgsea(
-  pathways = CGP,
-  stats    = ranks.gastroc,
-  minSize  = 15,
-  maxSize  = params$fgsea.maxSize
-)
-
-fgseaRes.soleus <- fgsea(
-  pathways = CGP,
-  stats    = ranks.soleus,
-  minSize  = 15,
-  maxSize  = params$fgsea.maxSize
-)
-
-saveRDS(fgseaRes.gastroc, file="./data/Robjects/04_fgseaRes.gastroc.rds")
-saveRDS(fgseaRes.soleus, file = "./data/Robjects/04_fgseaRes.soleus.rds")
-```
 
 
 
@@ -184,7 +230,7 @@ plot_top_enrichment <- function(fgseaRes, pathways, ranks, n = 9, up = TRUE) {
       # TODO: keep axis.text.y only on the right column
       theme(
         axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
+        axis.title.y = element_blank()
       ) # +
       # coord_cartesian(xlim = lims$x, ylim = lims$y)
     plot.list[[i]] <- plt
@@ -208,11 +254,17 @@ arrange_plts <- function(plt.list) {
   # arrange the plots
   fig_labels <- LETTERS[1:nplts]
   
+  patchwork::wrap_plots(plt.list, )
+  
   figure <- ggpubr::ggarrange(plotlist = plt.list,
                               labels = fig_labels) %>%
     annotate_figure(left = text_grob(ylab, rot = 90),
                     bottom = text_grob(xlab))
-  
+ 
+  # TODO: remove all x-axis labels except lower row
+  # get dimensions
+  figure$layers
+   
   return(figure)
 }
 
@@ -365,9 +417,20 @@ p <- ggplot(res.combined, aes(x = gastroc, y = soleus, text=pathway)) +
 
 plotly::ggplotly(p, tooltip = "all")
 ```
+
 #### barplot
 
 ```{r diffGenesBarPlot}
 ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp))
 ```
+
+
+# currentTODOs
+
+[ ] looking at duplicate entrezgene_ids \
+[ ] finding optimal `maxSize` (one sided curve) \
+[ ] find out biological meaning of significant pathways \
+
+
+# Questions
