@@ -1,5 +1,5 @@
 ---
-title: "01 FirstAnalysis"
+title: "01_FirstAnalysis"
 author: "Nick Diercksen"
 output:
   html_notebook:
@@ -56,7 +56,7 @@ counts.soleus <- soleus[, 1:12]
 Both counts have the same genes analysed.
 These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
 
-```{r}
+```{r gene_biotypes}
 gene_biotypes <- table(gastroc$gene_biotype) %>%
   as.data.frame() %>%
   arrange(desc(Freq))
@@ -73,7 +73,7 @@ treemap::treemap(gene_biotypes,
 
 For a broad overview all genes with `rowSums() < 10` will be displayed. This is usually similar to omitting genes with zero counts of more than 30%
 
-```{r}
+```{r overview}
 rs.gastroc <- rowSums(counts.gastroc) %>%
   as.data.frame() %>%
   dplyr::rename("rowSums" = ".")
@@ -116,7 +116,7 @@ p.soleus
 
 omitting genes with zero counts in more than 30% of the samples
 
-```{r echo=FALSE}
+```{r omit_zero_counts, echo=FALSE}
 omitZeroCounts <- function(counts.raw, share=0.3) {
   keep <- (counts.raw != 0) %>%
     rowSums() > round(share * ncol(counts.raw))
@@ -136,7 +136,7 @@ counts.soleus <- omitZeroCounts(counts.soleus)
 -   too many zero counts
 -   different total counts
 
-```{r}
+```{r lib_sizes}
 plot.library_size <- function(counts, title="") {
   cs <- colSums(counts) %>%
     as.data.frame() %>%
@@ -166,7 +166,7 @@ not sure what to make of this, but its there.
 
 Preparing the sample by applying log2 and loading metadata files
 
-```{r echo=FALSE, message=FALSE}
+```{r counts.distr.prep, echo=FALSE, message=FALSE}
 logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
 logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
 
@@ -179,7 +179,7 @@ metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
 
 Resulting Plots:
 
-```{r message=FALSE}
+```{r counts.distr.plot, message=FALSE}
 plotBoxLog <- function(logcounts, metadata) {
   stack(logcounts) %>%
     merge(metadata, by.x = "ind", by.y = "sample_name") %>% 
@@ -188,7 +188,7 @@ plotBoxLog <- function(logcounts, metadata) {
     ylab("Log2(Counts)") +
     xlab(element_blank()) +
     theme(axis.text.x=element_text(angle=45, vjust=.8, hjust=0.8)) +
-    geom_hline(yintercept = median(as.matrix(logcounts.gastroc)), col="blue" )
+    geom_hline(yintercept = median(as.matrix(logcounts)), col="blue" )
 }
 
 p1 <- plotBoxLog(logcounts.gastroc, metadata.gastroc) + 
@@ -201,7 +201,7 @@ p2 <- plotBoxLog(logcounts.soleus, metadata.soleus) +
 ```
 
 
-```{r echo=FALSE, message=FALSE}
+```{r counts.distr.pdf, echo=FALSE, message=FALSE}
 pdf(NULL) # avoiding blank plot created by ggarrange
 p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
 x = dev.off()  # see above
@@ -215,7 +215,7 @@ p
 Just for exploration purpose, but the resulting data is not used in the
 following analysis.
 
-```{r message=FALSE}
+```{r counts.rlog.plot, message=FALSE}
 p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
   as.data.frame() %>%
   plotBoxLog(metadata.gastroc) + 
@@ -232,7 +232,7 @@ p2 <- DESeq2::rlog(as.matrix(counts.soleus)) %>%
 ```
 
 
-```{r echo=FALSE, message=FALSE}
+```{r counts.rlog.pdf, echo=FALSE, message=FALSE}
 pdf(NULL) # avoiding blank plot created by ggarrange
 p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
 x = dev.off()  # see above
@@ -249,7 +249,7 @@ z-score:
 
 $\frac{x - mean(x)}{sd(x)}$
 
-```{r}
+```{r zscore}
 zscore <- function(M) {
   s <- apply( M,1,sd )      # standard deviation
   µ <- apply( M, 1, mean )  # mean
@@ -321,7 +321,7 @@ plotCHM(counts.soleus.top)
 the pca is performed on the z-scored data
 => Thus not using the `scale.=T` argument?
 
-```{r message=FALSE}
+```{r pca.gastroc, message=FALSE}
 pca <- prcomp(t(counts.gastroc.top), .scale=T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
@@ -343,7 +343,7 @@ plt
 
 ## soleus
 
-```{r message=FALSE}
+```{r pca.soleus, message=FALSE}
 pca <- prcomp(t(counts.soleus.top), scale. = T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
@@ -367,7 +367,7 @@ plt
 ## both tissues
 Here also taking the top 1000 most variable genes of each tissue and merging them.
 
-```{r message=FALSE}
+```{r pca.both, message=FALSE}
 # combine both count tables
 counts.both <-
   merge(counts.gastroc.top,
