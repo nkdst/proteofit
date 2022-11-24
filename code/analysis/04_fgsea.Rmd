@@ -62,6 +62,7 @@ getRanks <- function(res, annot) {
 ranks.gastroc <- getRanks(res.gastroc, annot)
 ranks.soleus <- getRanks(res.soleus, annot)
 # TODO: why (again) is the soleus gene count seemingly 300 below gastroc gene count / ranks count
+# -> seems because of e.g. the cutoff at DESeq
 ```
 
 ## ranks distribution
@@ -70,18 +71,26 @@ ranks.soleus <- getRanks(res.soleus, annot)
 # no idea how to plot this with ggplot (one column) ...
 
 # ggpubr::ggarrange(
-  barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
-  barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
+# TODO: prettify
+# barplot.file <- "./plots/04_barplot_ranks.png"
+# if (!file.exists(barplot.file)) {
+#   png(barplot.file)
+    par(mfrow = c(1, 2))
+    barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
+    barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
+  # dev.off()
+# }
 # )
 ```
 
+
 ## duplicate entrezgene_ids
+
 duplicate entrezgene ids (multiple entrez are mapped to the same gene name)
 
-Thus a quick look if any of these genes can be simply omitted. Like if the 
-gene_type is "other" or "tRNA"
+Thus a quick look if any of these genes can be simply omitted. Like if the gene_type is "other" or "tRNA"
 
-```{r}
+```{r include=FALSE}
 # TODO: do not use annot, but the merge? (actually used genes!)
 # first looking at ENSEMBL:
 duplicate_ENSEMBL <- annot[duplicated(annot$GeneID), ] %>%
@@ -108,11 +117,10 @@ sum(duplicate_ENSEMBL$GeneID %in% duplicate_geneNames$GeneID) %>%
 diff_ENS_gene <- nrow(duplicate_geneNames) - nrow(duplicate_ENSEMBL)
 ```
 
-Since all ENSEMBL duplicates are also found in the gene_name duplicates, using
-the ENSEMBL as id for the ranks would reduce the number of duplicates by 
-`r diff_ENS_gene`.
+Since all ENSEMBL duplicates are also found in the gene_name duplicates, using the ENSEMBL as id for the ranks would reduce the number of duplicates by `r diff_ENS_gene`.
 
 actually most of them are "protein coding" and will not be omitted.
+to be continued ...
 
 ```{r eval=FALSE, include=FALSE}
 # TODO: do a e.g. bar-plot with the distribution of gene_biotypes of the duplicates
@@ -135,8 +143,6 @@ ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
 
 ```
 
-
-
 # loading pathways
 
 Pathways are provided by <http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp>
@@ -157,18 +163,14 @@ CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonic
 # M2 <- qusage::read.gmt("./data/pathways/m2.all.v2022.1.Mm.entrez.gmt") # curated gene set with 2600 genes
 ```
 
-
 # applying fgsea
 
-```{}
-fgseaRes <- fgsea(
-  pathways = CGP,
-  stats    = ranks,
-  minSize  = 15,
-  maxSize  = `r params$fgsea.maxSize`
-)
-```
-
+    fgseaRes <- fgsea(
+      pathways = CGP,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = `r params$fgsea.maxSize`
+    )
 
 ```{r fgsea_res_load, include=FALSE}
 # ' returns the fgsea result
@@ -209,17 +211,13 @@ fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
 fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 ```
 
-
-
-
 ## Enrichment score plot
 
-
-ordering pathways by padj values and using `ES` to 
+ordering pathways by padj values and using `ES` to
 
 ```{r fn_get_top_pathways}
 # ' obtain top pathways ordered by padj and use `ES` for up or down regulation
-get_top_pathways <- function(fgseaRes, up = TRUE, pCutoff=0.01, n=10) {
+get_top_pathways <- function(fgseaRes, up = TRUE, pCutoff=params$pCutoff, n=10) {
   .updown <- ifelse(up, `>`, `<`)
   
   top.pathways <- fgseaRes %>%
@@ -231,8 +229,8 @@ get_top_pathways <- function(fgseaRes, up = TRUE, pCutoff=0.01, n=10) {
 }
 ```
 
-
 plot for top up and down regulated pathways
+
 ```{r}
 # ' plots top n enrichment plots for the given fgsea result
 plot_top_enrichment <- function(fgseaRes, pathways, ranks, n = 9, up = TRUE) {
@@ -298,8 +296,8 @@ arrange_plts <- function(plt.list) {
 
 ```
 
-
 ### gastroc up
+
 ```{r}
 plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=T)
 
@@ -310,6 +308,7 @@ knitr::kable(caption = "plot labels", plot_labels)
 ```
 
 ### gastroc down
+
 ```{r}
 plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=F)
 plot_labels <-
@@ -318,6 +317,7 @@ knitr::kable(caption = "plot labels", plot_labels)
 ```
 
 ### soleus up
+
 ```{r}
 plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=T)
 
@@ -327,6 +327,7 @@ knitr::kable(caption = "plot labels", plot_labels)
 ```
 
 ### soleus down
+
 ```{r}
 plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=F)
 plot_labels <-
@@ -334,8 +335,8 @@ plot_labels <-
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
-
 ## GSEA table plot
+
 ### gastroc
 
 top significant pathways:
@@ -382,53 +383,36 @@ plotGseaTable(
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
 
-
-
 ### most differential regulated pathways, both tissues
 
-using `NES` from the fgsea result filtering on the set `pCutoff=``r params$pCutoff` 
-yields the following plot:
-```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
-prepare_result <- function(fgseaRes, colname="NES", pCutoff) {
-  fgseaRes.prep <- fgseaRes %>%
-    data.frame() %>%
-    filter(padj < pCutoff) %>%
-    dplyr::rename(!!colname := NES) %>%
-    dplyr::select(!!colname, pathway)
-  return(fgseaRes.prep)
-}
+using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
 
-prep.gastroc <- prepare_result(fgseaRes.gastroc, colname="gastroc", params$pCutoff)
-prep.soleus  <- prepare_result(fgseaRes.soleus,  colname="soleus", params$pCutoff)
+```{r topDiff.both, warning=FALSE}
 
-
-# combining wald-Test data from both tissues and ordering in quadrants
-res.combined <- merge(prep.gastroc,
-                      prep.soleus,
-                      by = "pathway") %>%
-  mutate(diff.exp = case_when(
-    gastroc < 0 & soleus < 0 ~ "both down",
-    gastroc > 0 & soleus > 0 ~ "both up",
-    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
-    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
-    TRUE ~ "different"
-  ))
-
-# only annotating top_n pathways by: 
-# removing all pathway_names except the top_n_pathways (sum of absolute NES numbers)
-# top_n_pathways <- 10
-# top_labels <- res.combined %>%
-#   group_by(diff.exp) %>% 
-#   arrange(desc(abs(gastroc) + abs(soleus))) %>%
-#   filter(row_number() %in% c(1:top_n_pathways)) %>% 
-#   ungroup() %>% 
-#   .$pathway
-
-# res.combined <- res.combined %>% 
-#   mutate(pathway = ifelse(pathway %in% top_labels, pathway, ""))
+pCutoff <- params$pCutoff
+res.combined <- merge(
+  data.frame(fgseaRes.gastroc[, c("pathway", "NES", "padj")]),
+  data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
+  by = "pathway",
+  suffixes = c(".ga", ".sol")
+) %>%
+  filter(padj.ga < pCutoff | padj.sol < pCutoff) %>%
+  mutate(
+    diff.exp = case_when(
+      NES.ga  < 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both down",
+      NES.ga  > 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both up",
+      NES.ga  < 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga down, sol up",
+      NES.ga  > 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga up, sol down",
+      NES.ga  < 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga down",
+      NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
+      NES.sol < 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol down",
+      NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
+      TRUE ~ "different"
+    )
+  )
 
 # final plot
-p <- ggplot(res.combined, aes(x = gastroc, y = soleus, text=pathway)) +
+p <- ggplot(res.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
   geom_vline(xintercept = 0) + 
   geom_hline(yintercept = 0) + 
   geom_point(aes(color = diff.exp)) +
@@ -447,12 +431,10 @@ ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp))
 ```
 
-
 # currentTODOs
 
-[ ] looking at duplicate entrezgene_ids \
-[ ] finding optimal `maxSize` (one sided curve) \
-[ ] find out biological meaning of significant pathways \
-
+[ ] looking at duplicate entrezgene_ids\
+[ ] finding optimal `maxSize` (one sided curve)\
+[ ] find out biological meaning of significant pathways\
 
 # Questions
