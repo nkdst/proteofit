@@ -61,6 +61,7 @@ getRanks <- function(res, annot) {
 
 ranks.gastroc <- getRanks(res.gastroc, annot)
 ranks.soleus <- getRanks(res.soleus, annot)
+# TODO: why (again) is the soleus gene count seemingly 300 below gastroc gene count / ranks count
 ```
 
 ## ranks distribution
@@ -81,24 +82,30 @@ Thus a quick look if any of these genes can be simply omitted. Like if the
 gene_type is "other" or "tRNA"
 
 ```{r}
+# TODO: do not use annot, but the merge? (actually used genes!)
 # first looking at ENSEMBL:
-dup_rows <- duplicated(annot$GeneID) | duplicated(annot$GeneID, fromLast = T)
-anot_dup_ENS <- annot[dup_rows, ]
-dupENS_perGroup <- dplyr::group_by(anot_dup_ENS, GeneID + gene_biotype) %>% 
+duplicate_ENSEMBL <- annot[duplicated(annot$GeneID), ] %>%
+  dplyr::group_by(GeneID, gene_biotype) %>%
   summarise(n = n())
 
 # looking at gene_names(ext):
-dup_rows <- duplicated(annot$external_gene_name) | duplicated(annot$external_gene_name, fromLast = T)
-anot_dup_geneN <- annot[dup_rows, ]
+duplicate_geneNames <- annot[duplicated(annot$external_gene_name), ] %>% 
+  dplyr::group_by(GeneID, gene_biotype) %>%
+  summarise(n = n())
 
+# duplicates have always the same gene_biotype! (in no more than one group occurs the same GeneID)
+anyDuplicated(duplicate_ENSEMBL$GeneID)   # 0
+anyDuplicated(duplicate_geneNames$GeneID) # 0
 
 # are all gene_name duplicates in ENS duplicates?
-sum(anot_dup_ENS$GeneID %in% anot_dup_geneN$GeneID) %>%
-  sprintf("%d / %d ENSEMBL duplications are also in the gene_name dups", ., nrow(anot_dup_ENS))
+sum(duplicate_ENSEMBL$GeneID %in% duplicate_geneNames$GeneID) %>%
+  sprintf(
+    "%d / %d ENSEMBL duplications are also included in the duplicated gene_names",
+    .,
+    nrow(duplicate_ENSEMBL)
+  )
 
-diff_ENS_gene <- nrow(anot_dup_geneN) - nrow(anot_dup_ENS)
-
-
+diff_ENS_gene <- nrow(duplicate_geneNames) - nrow(duplicate_ENSEMBL)
 ```
 
 Since all ENSEMBL duplicates are also found in the gene_name duplicates, using
@@ -107,10 +114,24 @@ the ENSEMBL as id for the ranks would reduce the number of duplicates by
 
 actually most of them are "protein coding" and will not be omitted.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 # TODO: do a e.g. bar-plot with the distribution of gene_biotypes of the duplicates
 #       vs the whole genome
+# create the df for plotting
 
+ENS <- duplicate_ENSEMBL %>%
+  dplyr::group_by(gene_biotype) %>%
+  summarise(count = sum(n))
+
+
+GN <- duplicate_geneNames %>%
+  dplyr::group_by(gene_biotype) %>%
+  summarise(count = sum(n))
+
+
+
+ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
+  geom_bar(stat="identity")
 
 ```
 
@@ -164,7 +185,7 @@ get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=C
   fgseaRes.dir <- dirname(fgseaRes.path)
   
   if (file.exists(fgseaRes.path) & !params$reevaluate) {
-    message("fgsea result found in directory! Prvious version will be loaded ...")
+    message("fgsea result found in directory! Previous version will be loaded ...")
     return(readRDS(file = fgseaRes.path))
   } else {
     # perform fgsea and save the result
@@ -180,6 +201,7 @@ get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=C
         dir.create(fgseaRes.dir, recursive = T)
       saveRDS(fgseaRes, file = fgseaRes.path)
     }
+    return(fgseaRes)
   }
 }
 
