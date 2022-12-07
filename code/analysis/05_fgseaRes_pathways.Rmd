@@ -1,0 +1,120 @@
+---
+title: "GSEA analysis"
+author: "Nick Diercksen"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+  html_document:
+    toc: yes
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+params:
+  pCutoff:
+    value: 0.01
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+# library(rWikiPathways)
+library(xml2)
+```
+
+```{r load_rdata, include=FALSE}
+getWikiPathways <- function() {
+  pathways.dir <- "./data/pathways/"
+  pathway.files <- list.files(pathways.dir)
+  wikiPathway <-
+    grep("wikipathways", pathway.files) %>% pathway.files[.]
+  if (length(wikiPathway) == 0) {
+    wikiPathway <-
+      rWikiPathways::downloadPathwayArchive(organism = "Mus musculus",
+                                            format = 'gpml',
+                                            destpath = pathways.dir)
+    
+    gpml_files <-
+      list.files(file.path(pathways.dir, "wikipathways"), full.names = T)
+    
+    df_list <- lapply(gpml_files, function(f) {
+      doc <- read_xml(f)
+      
+      source_nodes <- xml_find_all(doc, "//*[@Source]")
+      pathway_name <- xml_attr(doc, "Name")
+      xml_name(source_nodes)
+      
+      df <-
+        data.frame(as.list(c(
+          xml_text(source_nodes), pathway_name
+        )))
+      df <-
+        setNames(df, c(xml_attr(source_nodes, "Source"), "Pathway")) %>%
+        .[colnames(.) %in% c("Pathway",
+                             "WikiPathways-category",
+                             "WikiPathways-description")]
+    })
+    
+    # CHAIN MERGE INTO MASTER DATAFRAME
+    final_df <-
+      Reduce(function(x, y)
+        merge(x, y, all = T), df_list)
+  }
+  return(final_df)
+}
+
+wikiPathways <- getWikiPathways()
+fgseaRes.combined <-
+  readRDS("./data/Robjects/04_fgseaRes.combined.rds") %>%
+  mutate(NES = abs(NES.ga) + abs(NES.sol))
+```
+
+
+# significant genes
+
+## barplot (revision)
+
+```{r diffGenesBarPlot}
+ggplot(fgseaRes.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp))
+```
+
+## list of all significant pathways
+pathways will be sorted here by the absolute sum of the NES...
+
+### both down
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "both down") %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+### both up
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "both up") %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+### ga up
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "ga up") %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+
+# currentTODOs
+
+[ ] find out biological meaning of significant pathways\

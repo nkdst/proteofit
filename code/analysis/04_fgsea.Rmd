@@ -390,7 +390,7 @@ using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pC
 ```{r topDiff.both, warning=FALSE}
 
 pCutoff <- params$pCutoff
-res.combined <- merge(
+fgseaRes.combined <- merge(
   data.frame(fgseaRes.gastroc[, c("pathway", "NES", "padj")]),
   data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
   by = "pathway",
@@ -412,7 +412,7 @@ res.combined <- merge(
   )
 
 # final plot
-p <- ggplot(res.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
+p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
   geom_vline(xintercept = 0) + 
   geom_hline(yintercept = 0) + 
   geom_point(aes(color = diff.exp)) +
@@ -424,12 +424,50 @@ p <- ggplot(res.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
 plotly::ggplotly(p, tooltip = "all")
 ```
 
-#### barplot
+### barplot
 
 ```{r diffGenesBarPlot}
-ggplot(res.combined, aes(x = diff.exp)) +
+ggplot(fgseaRes.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp))
 ```
+
+### list of all significant pathways
+pathways will be sorted here by the absolute sum of the NES...
+
+#### both down
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "both down") %>% 
+  mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+#### both up
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "both up") %>% 
+  mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+#### ga up
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "ga up") %>% 
+  mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+```{r include = FALSE}
+saveRDS(fgseaRes.combined, file = "./data/Robjects/04_fgseaRes.combined.rds")
+```
+
 
 # currentTODOs
 
