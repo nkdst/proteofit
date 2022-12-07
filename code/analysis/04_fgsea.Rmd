@@ -1,6 +1,7 @@
 ---
 title: "GSEA analysis"
 author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
 output:
   html_notebook:
     toc: yes
