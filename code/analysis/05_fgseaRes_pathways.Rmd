@@ -28,43 +28,92 @@ library(xml2)
 ```
 
 ```{r load_rdata, include=FALSE}
-getWikiPathways <- function() {
-  pathways.dir <- "./data/pathways/"
-  pathway.files <- list.files(pathways.dir)
-  wikiPathway <-
-    grep("wikipathways", pathway.files) %>% pathway.files[.]
-  if (length(wikiPathway) == 0) {
-    wikiPathway <-
-      rWikiPathways::downloadPathwayArchive(organism = "Mus musculus",
-                                            format = 'gpml',
-                                            destpath = pathways.dir)
+get_xml_text <- function(nodes, xpath) {
+    xml_find_all( nodes, xpath ) %>%
+    xml_text() %>% 
+    ifelse(length(.) == 0, "", .)
+}
+extract_metaInf_from_gpml <- function(gpml_file) {
+  doc <- read_xml(gpml_file)
+  # doc1 <- read_xml(gpml_files[119]) # Microglia pathogen phagocytosis pathway
+  
+  pathway_name <- xml_attr(doc, "Name")
+  
+  # "Pathway Ontology" and "Cell Type" information:
+  if ("bp" %in% names(xml_ns(doc))) {
+    # (throws error if namespace 'bp' does not exist)
+    ontology_nodes <-
+      xml_find_all(doc, "//d1:Biopax")
+    pathway_ontology <-
+      get_xml_text(
+        ontology_nodes,
+        "//bp:openControlledVocabulary[bp:Ontology='Pathway Ontology']/bp:TERM"
+      )
     
-    gpml_files <-
-      list.files(file.path(pathways.dir, "wikipathways"), full.names = T)
-    
-    df_list <- lapply(gpml_files, function(f) {
-      doc <- read_xml(f)
-      
-      source_nodes <- xml_find_all(doc, "//*[@Source]")
-      pathway_name <- xml_attr(doc, "Name")
-      xml_name(source_nodes)
-      
-      df <-
-        data.frame(as.list(c(
-          xml_text(source_nodes), pathway_name
-        )))
-      df <-
-        setNames(df, c(xml_attr(source_nodes, "Source"), "Pathway")) %>%
-        .[colnames(.) %in% c("Pathway",
-                             "WikiPathways-category",
-                             "WikiPathways-description")]
-    })
-    
-    # CHAIN MERGE INTO MASTER DATAFRAME
-    final_df <-
-      Reduce(function(x, y)
-        merge(x, y, all = T), df_list)
+    cell_type <-
+      get_xml_text(
+        ontology_nodes,
+        "//bp:openControlledVocabulary[bp:Ontology='Cell Type']/bp:TERM"
+      )
+  } else {
+    pathway_ontology <- ""
+    cell_type <- ""
   }
+  
+  source_nodes <- xml_find_all(doc, "./*[@Source]")
+  description <-
+    get_xml_text(source_nodes, "//*[@Source='WikiPathways-description']")
+  
+  category <-
+    get_xml_text(source_nodes, "//*[@Source='WikiPathways-category']")
+  
+  df <- data.frame(
+    "Pathway" = pathway_name,
+    "Category" = category,
+    "Description" = description,
+    "Pathway Ontology" = pathway_ontology,
+    "Cell Type" = cell_type
+  )
+  
+  return(df)
+}
+getWikiPathways <- function() {
+  
+  pathways.dir <- "./data/pathways/"
+  wikiPathways.dir <- "./data/pathways/wikiPathways"
+  wikiPathways.file <- "./data/pathways/wikiPathways.rds"
+  if (file.exists(wikiPathways.file) && !params$reevaluate) {
+    return(readRDS(wikiPathways.file))
+  }
+  
+  if (!file.exists(wikiPathways.dir)) {
+    dir.create(wikiPathways.dir)
+  }
+  
+  # download gpml files from wikiPathways
+  
+  tmp_dir <- file.path(tempdir(), "wikipathways")
+  dir.create(tmp_dir)
+  wikiPathway.zip <-
+    rWikiPathways::downloadPathwayArchive(organism = "Mus musculus",
+                                          format = 'gpml',
+                                          destpath = tmp_dir)
+  
+  gpml_files <-
+    unzip(file.path(tmp_dir, wikiPathway.zip), exdir = tmp_dir)
+  
+  df_list <- lapply(gpml_files, function(f) {
+    extract_metaInf_from_gpml(f)
+  })
+  
+  # chain merge into final dataframe
+  final_df <-
+    Reduce(function(x, y)
+      merge(x, y, all = T), df_list)
+  
+  saveRDS(final_df, wikiPathways.file)
+  
+  unlink(tmp_dir, recursive = TRUE)
   return(final_df)
 }
 
@@ -73,7 +122,6 @@ fgseaRes.combined <-
   readRDS("./data/Robjects/04_fgseaRes.combined.rds") %>%
   mutate(NES = abs(NES.ga) + abs(NES.sol))
 ```
-
 
 # significant genes
 
