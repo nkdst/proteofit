@@ -403,10 +403,10 @@ fgseaRes.combined <- merge(
       NES.ga  > 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both up",
       NES.ga  < 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga down, sol up",
       NES.ga  > 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga up, sol down",
-      NES.ga  < 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga down",
-      NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
-      NES.sol < 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol down",
-      NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
+                                  padj.ga < pCutoff & padj.sol > pCutoff ~ "only gastroc",
+      # NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
+                                  padj.ga > pCutoff & padj.sol < pCutoff ~ "only soleus",
+      # NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
       TRUE ~ "different"
     )
   )
@@ -454,10 +454,20 @@ fgseaRes.combined %>%
   rmarkdown::paged_table(options = list(cols.min.print = 2))
 ```
 
-#### ga up
+#### only gastroc
 ```{r}
 fgseaRes.combined %>% 
-  filter(diff.exp == "ga up") %>% 
+  filter(diff.exp == "only gastroc") %>% 
+  mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
+  select(pathway, NES) %>% 
+  arrange(desc(NES)) %>%
+  rmarkdown::paged_table(options = list(cols.min.print = 2))
+```
+
+#### only soleus
+```{r}
+fgseaRes.combined %>% 
+  filter(diff.exp == "only soleus") %>% 
   mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
   select(pathway, NES) %>% 
   arrange(desc(NES)) %>%
@@ -474,5 +484,3 @@ saveRDS(fgseaRes.combined, file = "./data/Robjects/04_fgseaRes.combined.rds")
 [ ] looking at duplicate entrezgene_ids\
 [ ] finding optimal `maxSize` (one sided curve)\
 [ ] find out biological meaning of significant pathways\
-
-# Questions
