@@ -1,9 +1,8 @@
 ---
 title: "testing"
 author: "Nick Diercksen"
-date: "2022-10-10"
-output:
-  html_document:
+date: "Last compiled on `r format(Sys.time())`"
+html_document:
     df_print: paged
 params:
   FCutoff:
@@ -55,8 +54,47 @@ warning("grDevice size: ", grDevices::dev.size())
 ```
 
 
-```{r, eval=reevaluate}
-load("./data/Robjects/03_DDS.RData")
+
+```{r}
+# creating variable
+a <- "23"
+```
+
+```{}
+changingR <- function(a) {
+  `r a` + 7
+}
+```
+
+
+```{r fgsea_sample, eval=FALSE}
+fgseaRes <- fgsea(
+  pathways = CGP,
+  stats    = ranks,
+  minSize  = 15,
+  maxSize  = `r a` # (see above if other value was used)
+)
+```
+
+
+```{ fgsea_sample}
+fgseaRes <- fgsea(
+  pathways = CGP,
+  stats    = ranks,
+  minSize  = 15,
+  maxSize  = `r a` # (see above if other value was used)
+)
+```
+
+
+
+```{}
+fgseaRes <- fgsea(
+  pathways = CGP,
+  stats    = ranks,
+  minSize  = 15,
+  maxSize  = `r a` # (see above if other value was used)
+)
 ```
 
 
@@ -68,52 +106,22 @@ Some relating discussions can be found here:
 * [plots on different monitors](https://github.com/rstudio/rmarkdown/issues/1827)
 * [true plots gist](https://gist.github.com/debruine/baa61e561935d5e0df1ea0f294399c6c)
 
-# testing plotly
-### most differential regulated pathways, both tissues
 
+```{r ranks_barplot, echo=FALSE}
+# no idea how to plot this with ggplot (one column) ...
 
-```{r}
-fgseaRes.gastroc <- readRDS(file="./data/Robjects/04_fgseaRes.gastroc.rds")
-fgseaRes.soleus <- readRDS(file="./data/Robjects/04_fgseaRes.soleus.rds")
+# ggpubr::ggarrange(
+# TODO: prettify
+barplot.file <- "./plots/04_barplot_ranks.png"
+# if (!file.exists(barplot.file)) {
+#   png(barplot.file)
+#     par(mfrow = c(1, 2))
+#     barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
+#     barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
+#   dev.off()
+# }
+# )
+knitr::include_graphics(barplot.file)
 ```
 
-
-```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
-prepare_result <- function(fgseaRes, colname="NES", pCutoff) {
-  fgseaRes.prep <- fgseaRes %>%
-    data.frame() %>%
-    filter(padj < pCutoff) %>%
-    dplyr::rename(!!colname := NES) %>%
-    dplyr::select(!!colname, pathway)
-  return(fgseaRes.prep)
-}
-
-prep.gastroc <- prepare_result(fgseaRes.gastroc, colname="gastroc", params$pCutoff)
-prep.soleus  <- prepare_result(fgseaRes.soleus,  colname="soleus", params$pCutoff)
-
-
-# combining wald-Test data from both tissues and ordering in quadrants
-res.combined <- merge(prep.gastroc,
-                      prep.soleus,
-                      by = "pathway") %>%
-  mutate(diff.exp = case_when(
-    gastroc < 0 & soleus < 0 ~ "both down",
-    gastroc > 0 & soleus > 0 ~ "both up",
-    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
-    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
-    TRUE ~ "different"
-  ))
-
-# final plot
-p <- ggplot(res.combined, aes(x = gastroc, y = soleus, text=pathway)) +
-  geom_vline(xintercept = 0) + 
-  geom_hline(yintercept = 0) + 
-  geom_point(aes(color = diff.exp)) +
-  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
-  labs(x = "gastroc", y = "soleus") +
-  # ggrepel::geom_label_repel(max.overlaps = 20) + 
-  ggtitle(label = "NES")
-
-plotly::ggplotly(p,tooltip = "all")
-p
-```
+<!-- ![barplot ranks distribution](../plots/04_barplot_ranks.png) -->
