@@ -269,7 +269,7 @@ boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, 
     merge(metadata, by.x="samplename", by.y=0) %>%
     merge(gene_names, by.x="ensembl", by.y=0)  %>%
     mutate(genotype = factor(genotype)) %>%
-    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed befor "KO"
+    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed before "KO"
     mutate(gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T))
   
   direction <- ifelse(upregulated, "up", "down")
