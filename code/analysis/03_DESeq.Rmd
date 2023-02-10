@@ -32,7 +32,7 @@ library(ggplot2)
 library(DESeq2)
 library(SummarizedExperiment)
 library(EnhancedVolcano)
-library(ggVennDiagram)
+library(eulerr)
 ```
 
 
@@ -41,7 +41,7 @@ if (! exists("knitting_parameters_used")) {
   # when knitting with parameters the following variables are already set
   FCutoff <- 1
   pCutoff <- 0.01
-} {
+} else {
   FCutoff <- params$FCutoff
   pCutoff <- params$pCutoff
 } 
@@ -322,26 +322,25 @@ boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
 `FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
 ```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
-prepare_result <- function(res, colname="stat", FCutoff, pCutoff) {
-  res.prep <- res %>%
+apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
+  res.filtered <- deseq.result %>%
     data.frame() %>%
     filter(padj < pCutoff,
            log2FoldChange > FCutoff | log2FoldChange < -FCutoff) %>%
     dplyr::rename(!!colname := stat) %>%
     dplyr::select(!!colname)
-  return(res.prep)
+  return(res.filtered)
 }
 
-prep.gastroc <- prepare_result(res.gastroc, colname="gastroc", FCutoff, pCutoff)
-prep.soleus  <- prepare_result(res.soleus,  colname="soleus",  FCutoff, pCutoff)
-
+gastroc_res.filtered <- apply_cutoffs(res.gastroc, colname="gastroc", FCutoff, pCutoff)
+soleus_res.filtered  <- apply_cutoffs(res.soleus,  colname="soleus",  FCutoff, pCutoff)
 
 gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
   dplyr::select(gene_name)
 
-# combining wald-Test data from both tissues and ordering in quadrants
-res.combined <- merge(prep.gastroc,
-                      prep.soleus,
+# combining Wald-Test data from both tissues and ordering in quadrants
+res.combined <- merge(gastroc_res.filtered,
+                      soleus_res.filtered,
                       by = 0) %>%
   mutate(diff.exp = case_when(
     gastroc < 0 & soleus < 0 ~ "both down",
@@ -374,6 +373,22 @@ ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
   ggrepel::geom_label_repel(max.overlaps = 20) + 
   ggtitle(label = "stat (Wald test)")
 ```
+
+```{r include=FALSE}
+# obtain gene counts for the respective groups for visualizing
+sign_gene_stats <- list(
+  "all genes" = nrow(gene_names),
+  "gastroc" = nrow(gastroc_res.filtered),
+  "soleus" = nrow(soleus_res.filtered),
+  "shared_sig_genes" = nrow(res.combined),
+  "both up" = sum(res.combined$diff.exp == "both up"),
+  "both down" = sum(res.combined$diff.exp == "both down"),
+  "ga up, sol down" = sum(res.combined$diff.exp == "ga up, sol down"),
+  "ga down, sol up" = sum(res.combined$diff.exp == "ga down, sol up")
+)
+```
+
+
 #### barplot
 
 ```{r diffGenesBarPlot}
@@ -381,6 +396,96 @@ ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp))
 ```
 
+
+#### Venn/Euler-Diagram
+
+Here are some Venn or Euler (proportional Venn) diagrams to choose from.
+
+Note: using Eulerr diagrams, yields inconsistent plots where the circle sets 
+will be placed at different absolute positions each time the plot function is
+called.
+=> Thus the plot might need to be called multiple times until the wanted 
+constellation is obtained.
+
+significant overview with all genes:
+```{r}
+venn.colors <- c(genes = "white", gastroc = "#FFB08E", soleus = "#FF6638")
+
+gene_sets <- c(
+  "all genes" = sign_gene_stats$`all genes` - sign_gene_stats$shared_sig_genes,
+  "all genes&gastroc" = sign_gene_stats$gastroc - sign_gene_stats$shared_sig_genes,
+  "all genes&soleus" = sign_gene_stats$soleus - sign_gene_stats$shared_sig_genes,
+  "all genes&gastroc&soleus" = sign_gene_stats$shared_sig_genes
+)
+
+# 1st option: euler
+plot(euler(gene_sets),
+     legend = list(side = "right") ,
+     main = "significant genes per tissue",
+     fills = venn.colors)
+
+# 2nd option: venn
+plot(venn(gene_sets),
+     main = "significant genes per tissue",
+     fills = venn.colors)
+```
+
+
+
+significant grouped:
+
+```{r vennDiagram}
+col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
+# venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
+venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", hue_pal()(4))
+
+# sets for the venn/euler diagram (exclusive counts)
+gene_sets <- c(
+  "gastroc" = sign_gene_stats$gastroc - sign_gene_stats$shared_sig_genes,
+  "soleus" = sign_gene_stats$soleus - sign_gene_stats$shared_sig_genes,
+  "gastroc&soleus" = sign_gene_stats$shared_sig_genes,
+  "gastroc&soleus&both down" = sign_gene_stats$`both down`,
+  "gastroc&soleus&both up" = sign_gene_stats$`both up`,
+  "gastroc&soleus&ga up, sol down" = sign_gene_stats$`ga up, sol down`,
+  "gastroc&soleus&ga down, sol up" = sign_gene_stats$`ga down, sol up`
+)
+# 'gastroc&soleus': if this line is omitted, then all intersects will be denoted 
+# with 0 (which was the goal to omit)
+
+# 1st option: eulerr
+plot(
+  euler(gene_sets),
+  quantities = T,
+  legend = list(side = "right"),
+  fills = venn.colors,
+  main = "significant genes"
+)
+
+
+# only the two tissues
+gene_sets <- c(
+  "gastroc" = sign_gene_stats$gastroc - sign_gene_stats$shared_sig_genes,
+  "soleus" = sign_gene_stats$soleus - sign_gene_stats$shared_sig_genes,
+  "gastroc&soleus" = sign_gene_stats$shared_sig_genes
+)
+
+
+# 2nd option: euler two tissues
+plot(
+  euler(gene_sets),
+  # legend = list(side = "right"),
+  fills = venn.colors,
+  main = "significant genes"
+)
+
+
+# 3rd option: venn two tissues
+plot(
+  venn(gene_sets),
+  fills = venn.colors,
+  main = "significant genes"
+)
+```
 
 # save R ojects
 
