@@ -1,5 +1,5 @@
 ---
-title: "GSEA analysis"
+title: "04_GSEA analysis"
 author: "Nick Diercksen"
 date: "Last compiled on `r format(Sys.time())`"
 output:
@@ -115,7 +115,7 @@ sum(duplicate_ENSEMBL$GeneID %in% duplicate_geneNames$GeneID) %>%
     nrow(duplicate_ENSEMBL)
   )
 
-diff_ENS_gene <- nrow(duplicate_geneNames) - nrow(duplicate_ENSEMBL)
+diff_ENS_gene <- nrow(duplicate_geneNames) -nrow(duplicate_ENSEMBL)
 ```
 
 Since all ENSEMBL duplicates are also found in the gene_name duplicates, using the ENSEMBL as id for the ranks would reduce the number of duplicates by `r diff_ENS_gene`.
@@ -482,6 +482,11 @@ saveRDS(fgseaRes.combined, file = "./data/Robjects/04_fgseaRes.combined.rds")
 
 # currentTODOs
 
-[ ] looking at duplicate entrezgene_ids\
-[ ] finding optimal `maxSize` (one sided curve)\
-[ ] find out biological meaning of significant pathways\
+* [ ] looking at duplicate entrezgene_ids\
+* [ ] finding optimal `maxSize` (one sided curve)\
+* [ ] find out biological meaning of significant pathways\
+* [ ] improve fgsea plots\
+  * [ ] improve labels (not overlapping with axes)\
+  * [ ] better align them ? https://www.biostars.org/p/438985/\
+  * [ ] maybe unify the axis scaling\
+  
