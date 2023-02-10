@@ -1,6 +1,7 @@
 ---
 title: "01_FirstAnalysis"
 author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
 output:
   html_notebook:
     code_folding: hide
@@ -276,10 +277,7 @@ counts.soleus.top <- mostVariableRows(counts.soleus)
 To visualize the top 1000 most variable genes, I tried to generate some Heatmaps. (This time not using DESeq2::rlog, but just `log2(counts)`. Using the raw counts
 I could try to just apply `log2` to all counts and then create a heatmap.
 
-### `ComplexHeatmap`
-The following Heatmaps are done with `ComplexHeatmap` but are very bad looking.
-
-#### gastroc
+### gastroc
 
 ```{r fig.width=4, fig.height=4, message=FALSE}
 
@@ -306,7 +304,7 @@ plotCHM(counts.gastroc.top)
 ```
 
 
-#### soleus
+### soleus
 
 ```{r fig.width=4, fig.height=4, message=FALSE}
 plotCHM(counts.soleus.top)
@@ -402,11 +400,11 @@ plt
 
 ## SE
 ```{r SummarizedExperiment}
-# ordering data.frames by rowname
+# ordering data.frames by rowname (ENSMUSG ID)
 gastroc <- gastroc[order(rownames(gastroc)),]
 soleus <- soleus[order(rownames(soleus)),]
 
-# rowData
+# rowData (all rows which were not filtered out before)
 rowdata.gastroc <- gastroc[, 13:21]
 rowdata.soleus <- rowdata.gastroc # should be the same I think
 rowdata.gastroc$filtered = rownames(rowdata.gastroc) %in% rownames(counts.gastroc)
@@ -444,12 +442,3 @@ saveRDS(se.soleus,             file = "./data/Robjects/01_se.soleus.rds")
 saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
 saveRDS(counts.soleus,  file = "./data/Robjects/counts.soleus.rds")
 ```
-
-
-
-# Questions
-Most variable genes:
-
-* which heatmap function should I use and what should I change about the plots?
-* should I include the traces?
-* should I completely omit the heatmaps (visualisation of most variable genes?)
