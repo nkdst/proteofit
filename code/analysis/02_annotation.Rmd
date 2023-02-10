@@ -1,6 +1,7 @@
 ---
 title: "02_Annotation"
 author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
 output:
   html_notebook:
     toc: yes
@@ -269,7 +270,6 @@ dups <- annot %>%
 # does something
 
 annot <- annot[!dups,]
-annot.backup <- annot
 ```
 
 
@@ -282,7 +282,4 @@ annot.backup <- annot
 save(annot, file = "./data/Robjects/02_annot.RData")
 ```
 
-
-
-# Questions
-
+this is currently used again in `04_fgsea`.
