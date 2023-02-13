@@ -30,6 +30,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
 library(DESeq2)
+# TODO: maybe just remove SE altogehter again?! seems to just bloat everything
 library(SummarizedExperiment)
 library(EnhancedVolcano)
 library(eulerr)
@@ -131,7 +132,7 @@ plotDispEsts(dds.gastroc)
 plotDispEsts(dds.soleus)
 ```
 
-### top significant diff. genes
+## top significant diff. genes
 
 ```{r topDiffGenes.df}
 topGenes.gastroc <- as.data.frame(res.gastroc) %>%
@@ -148,14 +149,16 @@ knitr::kable(head(topGenes.gastroc), caption = "gastroc")
 knitr::kable(head(topGenes.soleus), caption = "soleus")
 ```
 
-### p-values
+## p-values
 
 ```{r pValuesHist}
+# TODO: use ggplot for unified look of plots
 hist(res.gastroc$pvalue, main = "gastroc")
 hist(res.soleus$pvalue, main = "soleus")
 ```
 
-### Volcano Plot
+
+## Volcano Plot
 ```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
   gene_names <-
@@ -219,105 +222,7 @@ volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue 
 
 ```
 
-### top differential expressed genes
-
-```{r topDiffGenes}
-setBold <- function(src, special_labs) {
-  # source: https://stackoverflow.com/questions/39694490/highlighting-individual-axis-labels-in-bold-using-ggplot2
-  if (!is.factor(src)) src <- factor(src)                   
-  src_levels <- base::levels(src)                          
-  brave <- special_labs %in% src_levels                   
-  b_vec <- rep("plain", length(src_levels))              
-  if (all(brave)) {                                     
-    b_pos <- purrr::map_int(special_labs, ~which(.==src_levels))
-    b_vec[b_pos] <- "bold"
-    b_vec
-  } else {
-    message("setBold: no matching element found")
-  }
-  return(b_vec)
-}
-
-getTopExpressedEnsemblNames <-
-  function(result,
-           FCutoff,
-           n,
-           up = T) {
-    .filter <- ifelse(up, `>`, `<`)
-    
-    subset(result, .filter(log2FoldChange, FCutoff)) %>%
-      data.frame() %>%
-      filter(baseMean > 100) %>%
-      arrange(padj) %>%
-      .[1:n, ] %>%
-      rownames()
-  }
-
-boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, tissue ="") {
-  # getting the top n regulated genes
-  names.top <- getTopExpressedEnsemblNames(result, FCutoff=FCutoff, n=n, up = upregulated)
-  
-  counts.top <- counts(dds, normalized=T)[names.top, ]
-  metadata <- colData(se) %>% as.data.frame()
-  gene_names <- rowData(se)[, c("gene_name"), drop = F] %>% as.data.frame()
-  
-  counts.plt <-
-    data.frame(counts.top) %>%
-    tibble::rownames_to_column(var = "ensembl") %>%
-    tidyr::gather(key = "samplename",
-           value = "normalized_counts", 2:13) %>%
-    merge(metadata, by.x="samplename", by.y=0) %>%
-    merge(gene_names, by.x="ensembl", by.y=0)  %>%
-    mutate(genotype = factor(genotype)) %>%
-    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed before "KO"
-    mutate(gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T))
-  
-  direction <- ifelse(upregulated, "up", "down")
-  
-  ggplot(counts.plt,
-         aes(
-           x = as.factor(gene_name),
-           y = normalized_counts,
-           fill = genotype
-         )) +
-    geom_dotplot(
-      binaxis = 'y',
-      stackdir = 'center',
-      dotsize = 0.3,
-      position = position_dodge(0.8),
-      fill = "black"
-    ) +
-    geom_boxplot(outlier.size = 0.3) +
-    scale_y_log10() +
-    xlab("Genes") +
-    ylab("Normalized Counts") +
-    scale_fill_manual(values = customColors) +
-    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
-    theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    theme(axis.text.x = element_text(
-      angle = 45,
-      hjust = 1,
-      face = setBold(counts.plt$gene_name, c("Nfe2l1"))
-    ))
-}
-```
-
-#### gastroc
-
-```{r topDiffBox.gastroc, warning=FALSE, message=FALSE}
-boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastroc")
-boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastroc")
-```
-
-#### soleus
-
-```{r topDiffBox.soleus, warning=FALSE, message=FALSE}
-boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
-boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
-```
-
-### most differential genes, both tissues
+## scatter-plot: most differential genes, both tissues
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
 `FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
@@ -389,7 +294,7 @@ sign_gene_stats <- list(
 ```
 
 
-#### barplot
+## barplot
 
 ```{r diffGenesBarPlot}
 ggplot(res.combined, aes(x = diff.exp)) +
@@ -397,7 +302,223 @@ ggplot(res.combined, aes(x = diff.exp)) +
 ```
 
 
-#### Venn/Euler-Diagram
+## boxplots: significant genes in both tissues
+
+
+```{r boxplotSignGenes, message=FALSE, warning=FALSE}
+
+boxplot.genes <- function(counts.df, title ="", FCutoff = 1) {
+  
+  ggplot(counts.df,
+         aes(
+           # x = as.factor(gene_name),
+           x = reorder(gene_name,ensembl),
+           y = normalized_counts,
+           fill = genotype
+         )) +
+    geom_dotplot(
+      binaxis = 'y',
+      stackdir = 'center',
+      dotsize = 0.3,
+      position = position_dodge(0.8),
+      fill = "black"
+    ) +
+    geom_boxplot(outlier.size = 0.3) +
+    scale_y_log10() +
+    xlab("Genes") +
+    ylab("Normalized Counts") +
+    scale_fill_manual(values = customColors) +
+    ggtitle(title) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      face = setBold(counts.df$gene_name, c("Nfe2l1"))
+    ))
+}
+
+prepare_counts <- function(gene_ids, dds, se, reorder_genes = F) {
+  counts.top <- counts(dds, normalized = T)[gene_ids, ]
+  metadata <- colData(se) %>% as.data.frame()
+  gene_names <-
+    rowData(se)[, c("gene_name"), drop = F] %>% as.data.frame()
+  
+  # the prepared counts df for the plot
+  counts.plt <-
+    data.frame(counts.top) %>%
+    tibble::rownames_to_column(var = "ensembl") %>%
+    tidyr::gather(key = "samplename",
+                  value = "normalized_counts", 2:13) %>%
+    merge(metadata, by.x = "samplename", by.y = 0) %>%
+    merge(gene_names, by.x = "ensembl", by.y = 0)  %>%
+    mutate(genotype = factor(genotype)) %>%
+    mutate(genotype = relevel(genotype, "WT")) # "WT" needs to be displayed before "KO"
+    
+    if (reorder_genes) {
+      counts.plt <- counts.plt %>%
+        mutate(
+          gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T),
+          ensembl = forcats::fct_reorder(ensembl, normalized_counts, .desc = T)
+        )
+    } else {
+      idx = match(counts.plt$ensembl, gene_ids)
+      counts.plt <- counts.plt[order(idx),] %>%
+        mutate(gene_name = factor(gene_name))# %>%
+        # arrange(gene_name)
+      counts.plt$ensembl <- factor(counts.plt$ensembl, levels = gene_ids,ordered = TRUE)
+      counts.plt$gene_name <- factor(counts.plt$gene_name)
+
+      # counts.plt$gene_name <- factor(counts.plt$gene_name, levels = gene_ids)
+      # counts.plt <- counts.plt %>% 
+      #   mutate(gene_name = factor(gene_name, levels = gene_ids)) %>% 
+      #   arrange()
+    }
+  return(counts.plt)
+}
+
+
+# helper function to set the font of a label on the axis to bold
+setBold <- function(src, special_labs) {
+  # source: https://stackoverflow.com/questions/39694490/highlighting-individual-axis-labels-in-bold-using-ggplot2
+  if (!is.factor(src))
+    src <- factor(src)
+  src_levels <- base::levels(src)
+  brave <- special_labs %in% src_levels
+  b_vec <- rep("plain", length(src_levels))
+  if (all(brave)) {
+    b_pos <- purrr::map_int(special_labs, ~ which(. == src_levels))
+    b_vec[b_pos] <- "bold"
+    b_vec
+  } else {
+    message("setBold: no matching element found")
+  }
+  return(b_vec)
+}
+
+# actual plot call
+for (group in unique(res.combined$diff.exp)) {
+  gene_ids <- filter(res.combined, diff.exp == group)$`Row.names`
+  prep_counts.gastroc <- prepare_counts(gene_ids, dds.gastroc, se.gastroc, reorder_genes = T)
+  prep_counts.soleus <-
+    prepare_counts(levels(prep_counts.gastroc$ensembl), dds.soleus, se.soleus, reorder_genes = T)
+  gene_ids <- levels(prep_counts.gastroc$ensembl)
+  
+  p.g <- boxplot.genes(
+    counts.df = prep_counts.gastroc,
+    title = paste0("Sign. regulated genes: ", group, "\n tissue: ", "gastroc")
+  ) #%>% print()
+  
+  p.s <- boxplot.genes(
+    counts.df = prep_counts.soleus,
+    title = paste0("\n tissue: ", "soleus")
+  ) #%>% print()
+  
+  ggpubr::ggarrange(p.g, p.s, ncol = 1, nrow = 2)
+}
+```
+
+
+## boxplots: top 20 significant genes
+
+```{r topDiffGenes}
+setBold <- function(src, special_labs) {
+  # source: https://stackoverflow.com/questions/39694490/highlighting-individual-axis-labels-in-bold-using-ggplot2
+  if (!is.factor(src))
+    src <- factor(src)
+  src_levels <- base::levels(src)
+  brave <- special_labs %in% src_levels
+  b_vec <- rep("plain", length(src_levels))
+  if (all(brave)) {
+    b_pos <- purrr::map_int(special_labs, ~ which(. == src_levels))
+    b_vec[b_pos] <- "bold"
+    b_vec
+  } else {
+    message("setBold: no matching element found")
+  }
+  return(b_vec)
+}
+
+getTopExpressedEnsemblNames <- function(result,
+                                        FCutoff,
+                                        n,
+                                        up = T) {
+  .filter <- ifelse(up, `>`, `<`)
+  
+  subset(result, .filter(log2FoldChange, FCutoff)) %>%
+    data.frame() %>%
+    filter(baseMean > 100) %>%
+    arrange(padj) %>%
+    .[1:n, ] %>%
+    rownames()
+}
+
+boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, tissue ="") {
+  # getting the top n regulated genes
+  names.top <- getTopExpressedEnsemblNames(result, FCutoff=FCutoff, n=n, up = upregulated)
+  
+  counts.top <- counts(dds, normalized=T)[names.top, ]
+  metadata <- colData(se) %>% as.data.frame()
+  gene_names <- rowData(se)[, c("gene_name"), drop = F] %>% as.data.frame()
+  
+  counts.plt <-
+    data.frame(counts.top) %>%
+    tibble::rownames_to_column(var = "ensembl") %>%
+    tidyr::gather(key = "samplename",
+           value = "normalized_counts", 2:13) %>%
+    merge(metadata, by.x="samplename", by.y=0) %>%
+    merge(gene_names, by.x="ensembl", by.y=0)  %>%
+    mutate(genotype = factor(genotype)) %>%
+    mutate(genotype = relevel(genotype, "WT"))  %>% # "WT" needs to be displayed before "KO"
+    mutate(gene_name = forcats::fct_reorder(gene_name, normalized_counts, .desc = T))
+  
+  direction <- ifelse(upregulated, "up", "down")
+  
+  ggplot(counts.plt,
+         aes(
+           x = as.factor(gene_name),
+           y = normalized_counts,
+           fill = genotype
+         )) +
+    geom_dotplot(
+      binaxis = 'y',
+      stackdir = 'center',
+      dotsize = 0.3,
+      position = position_dodge(0.8),
+      fill = "black"
+    ) +
+    geom_boxplot(outlier.size = 0.3) +
+    scale_y_log10() +
+    xlab("Genes") +
+    ylab("Normalized Counts") +
+    scale_fill_manual(values = customColors) +
+    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      face = setBold(counts.plt$gene_name, c("Nfe2l1"))
+    ))
+}
+```
+
+### gastroc
+
+```{r topDiffBox.gastroc, warning=FALSE, message=FALSE}
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastroc")
+boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastroc")
+```
+
+### soleus
+
+```{r topDiffBox.soleus, warning=FALSE, message=FALSE}
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
+boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
+```
+
+
+## Venn/Euler-Diagram
 
 Here are some Venn or Euler (proportional Venn) diagrams to choose from.
 
@@ -437,7 +558,7 @@ significant grouped:
 ```{r vennDiagram}
 col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
-venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", hue_pal()(4))
+venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", scales::hue_pal()(4))
 
 # sets for the venn/euler diagram (exclusive counts)
 gene_sets <- c(
@@ -473,7 +594,8 @@ gene_sets <- c(
 # 2nd option: euler two tissues
 plot(
   euler(gene_sets),
-  # legend = list(side = "right"),
+  quantities = T,
+  legend = list(side = "right"),
   fills = venn.colors,
   main = "significant genes"
 )
@@ -492,8 +614,3 @@ plot(
 ```{r saving_R_objects}
 save(dds.gastroc, dds.soleus, res.gastroc, res.soleus, file = "./data/Robjects/03_DDS.RData")
 ```
-
-# Questions
-
--   should the boxplots be sorted after the counts, as they currently are?
--   what is/can be the title of the scatter plot?
