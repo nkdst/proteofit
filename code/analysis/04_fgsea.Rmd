@@ -39,6 +39,9 @@ perform_fgsea <- params$reevaluate
 
 load("./data/Robjects/02_annot.RData") # for entrezgene_id
 load("./data/Robjects/03_DDS.RData")   # for `stat` values from DESeq results
+
+# color palette for the tissues
+tissue_pal <- c(soleus = "#FFB08E", soleus="#FF6638")
 ```
 
 # creating ranks
@@ -60,9 +63,9 @@ getRanks <- function(res, annot) {
   return(ranks)
 }
 
-ranks.gastroc <- getRanks(res.gastroc, annot)
+ranks.soleus <- getRanks(res.gastroc, annot)
 ranks.soleus <- getRanks(res.soleus, annot)
-# TODO: why (again) is the soleus gene count seemingly 300 below gastroc gene count / ranks count
+# TODO: why (again) is the soleus gene count seemingly 300 below soleus gene count / ranks count
 # -> seems because of e.g. the cutoff at DESeq
 ```
 
@@ -77,7 +80,7 @@ ranks.soleus <- getRanks(res.soleus, annot)
 # if (!file.exists(barplot.file)) {
 #   png(barplot.file)
     par(mfrow = c(1, 2))
-    barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
+    barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, gastroc")
     barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
   # dev.off()
 # }
@@ -175,7 +178,7 @@ CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonic
 
 ```{r fgsea_res_load, include=FALSE}
 # ' returns the fgsea result
-# ' `tissue` needs to be one of {"gastroc", "soleus"}
+# ' `tissue` needs to be one of {"soleus", "soleus"}
 # ' Also saves the results locally to avoid too much queries
 get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
   robjects.path <- file.path(".", "data", "Robjects")
@@ -208,9 +211,303 @@ get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=C
   }
 }
 
-fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
+fgseaRes.soleus <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
 fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 ```
+
+
+## most differential regulated pathways, both tissues
+
+using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
+
+```{r topDiff.both, warning=FALSE}
+
+pCutoff <- params$pCutoff
+fgseaRes.combined <- merge(
+  data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
+  data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
+  by = "pathway",
+  suffixes = c(".ga", ".sol")
+) %>%
+  filter(padj.ga < pCutoff | padj.sol < pCutoff) %>%
+  mutate(
+    diff.exp = case_when(
+      NES.ga  < 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both down",
+      NES.ga  > 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both up",
+      NES.ga  < 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga down, sol up",
+      NES.ga  > 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga up, sol down",
+                                  padj.ga < pCutoff & padj.sol > pCutoff ~ "only soleus",
+      # NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
+                                  padj.ga > pCutoff & padj.sol < pCutoff ~ "only soleus",
+      # NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
+      TRUE ~ "different"
+    )
+  )
+
+# final plot
+p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  labs(x = "soleus", y = "soleus") +
+  # ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "NES")
+
+plotly::ggplotly(p, tooltip = "all")
+```
+
+
+### barplot
+
+```{r diffGenesBarPlot}
+ggplot(fgseaRes.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp))
+```
+
+### GO barplot
+
+```{r}
+bd.df <- fgseaRes.combined %>%
+  filter(diff.exp == "both down") %>%
+  mutate(padj = padj.ga + padj.sol) %>% # just to sort
+  arrange(padj) %>% 
+  slice_head(n = 20) %>%
+  select(-diff.exp, -padj) %>% 
+  rename(soleus := padj.ga, soleus := padj.sol) %>% 
+  tidyr::gather(key = "tissue", value = "p adj.", -pathway, -NES.ga, -NES.sol)
+
+# convert data from wide to long format
+df_long <- fgseaRes.combined %>%
+  select(pathway, NES.ga, NES.sol) %>%
+  rename(soleus := NES.ga, soleus := NES.sol) %>%
+  tidyr::gather(key = "tissue", value = "NES", -pathway)
+
+df_long <- select(bd.df, -NES.ga, -NES.sol) %>%
+  merge(df_long, by = c("pathway", "tissue"))
+
+# create grouped barplot
+ggplot(df_long, aes(x = reorder(pathway, -NES), y = NES, fill = tissue)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  xlab("Pathway") + ylab("NES") +
+  scale_fill_manual(values = tissue_pal) +
+  geom_text(aes(label = sprintf("%.2e", `p adj.`)), position = position_dodge(width = 0.9), vjust = +0.3, hjust = -1) +
+  coord_flip()
+
+
+```
+
+
+```{r}
+bd.df <- fgseaRes.combined %>%
+  filter(diff.exp == "both up") %>%
+  mutate(padj = padj.ga + padj.sol) %>% # just to sort
+  arrange(padj) %>% 
+  slice_head(n = 20) %>%
+  select(-diff.exp, -padj) %>% 
+  rename(soleus := padj.ga, soleus := padj.sol) %>% 
+  tidyr::gather(key = "tissue", value = "p adj.", -pathway, -NES.ga, -NES.sol)
+
+# convert data from wide to long format
+df_long <- fgseaRes.combined %>% 
+  select(pathway, NES.ga, NES.sol) %>% 
+  rename(soleus := NES.ga, soleus := NES.sol) %>% 
+  tidyr::gather(key = "tissue", value = "NES", -pathway)
+
+# df_long <- select(bd.df, -NES.ga, -NES.sol) %>% 
+#   merge(df_long, by = c("pathway", "tissue"))
+
+
+
+# create grouped barplot
+ggplot(df_long, aes(
+  x = reorder(pathway,+NES),
+  y = NES,
+  fill = tissue
+)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  xlab("Pathway") + ylab("NES") +
+  scale_fill_manual(values = tissue_pal) +
+  geom_text(
+    aes(label = sprintf("%.2e", `p adj.`)),
+    position = position_dodge(width = 0.9),
+    vjust = +0.3,
+    hjust = +0.9
+  ) +
+  coord_flip()
+```
+
+
+
+```{r}
+bd.df <- fgseaRes.combined %>%
+  filter(diff.exp == "only soleus") %>%
+  mutate(padj = padj.ga + padj.sol) %>% # just to sort
+  select(pathway, NES.ga, NES.sol) %>% 
+  arrange(NES.sol) %>% # TODO: ordering doesn't work!
+  slice_head(n = 20)
+
+# convert data from wide to long format
+df_long <- tidyr::gather(bd.df, key = "tissue", value = "value", -pathway)
+
+# create grouped barplot
+ggplot(df_long, aes(x = pathway, y = value, fill = tissue)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  xlab("Pathway") + ylab("NES") +
+  scale_fill_manual(values = tissue_pal) +
+  coord_flip()
+```
+
+#### cowplot
+```{r}
+library(ggplot2)
+library(cowplot)
+
+bd.df <- fgseaRes.combined %>%
+  filter(diff.exp == "both up") 
+
+# filter top 20 by adj. p-value
+bd.df <- bd.df %>%
+  mutate(padj = padj.ga + padj.sol) %>% # just to sort
+  arrange(padj) %>% 
+  slice_head(n = 20) %>%
+  select(-diff.exp, -padj)
+
+# prepare df for barplot (convert data from wide to long format)
+df_long <- bd.df %>% 
+  select(pathway, NES.ga, NES.sol) %>% 
+  rename(soleus := NES.ga, soleus := NES.sol) %>% 
+  tidyr::gather(key = "tissue", value = "NES", -pathway)
+
+# create the left panel with the bar plot and labels
+bar_plot <- ggplot(df_long, aes(x = pathway, y = NES, fill = tissue)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Pathway") +
+  ylab("NES") +
+  theme_classic() +
+  theme(panel.grid = element_blank()) + 
+  scale_fill_manual(values = tissue_pal) +
+  coord_flip()
+
+# create the right panel with the p-values
+pval_plot <- ggplot(bd.df, aes(x = pathway, y = "")) +
+  geom_text(aes(label = paste0(
+    sprintf("%.2e", padj.ga), "\n", sprintf("%.2e", padj.sol)
+  )), size = 3) +
+  xlab("") + 
+  ylab("p adj.") +
+  theme_minimal() +
+  coord_flip() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.y = element_blank(), # pathway names
+  )
+
+combined_plt <- cowplot::plot_grid(bar_plot, pval_plot, ncol = 2, align = "h", axis ="h")
+# try parameter axis = c("l","tb",...)
+
+
+# create the legend for the left plot
+legend1 <- get_legend(bar_plot)
+legend_plot <- draw_plot(legend1)
+
+# combine the two plots using cowplot
+cowplot::plot_grid(bar_plot, pval_plot, legend1, ncol = 3, align = "h", axis = "tb")# , rel_widths = c(10, 1.5, 1))
+
+```
+
+
+### dotplot
+```{r echo=FALSE}
+combined_dotplot <-
+  function(group,
+           fgseaRes.combined = fgseaRes.combined,
+           max_label_length = 25, topn=6e6) {
+    
+    # get pathways of the respective group
+    pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
+    
+    gastroc.df <- filter(fgseaRes.gastroc, pathway %in% pathways) %>% 
+      top_n(topn, wt = abs(NES))
+    soleus.df <- filter(fgseaRes.soleus, pathway %in% gastroc.df$pathway)
+    
+    padj_limits <-
+      c(min(gastroc.df$padj, soleus.df$padj),
+        max(gastroc.df$padj, soleus.df$padj))
+    
+    NES_limits <- 
+      c(min(gastroc.df$NES, soleus.df$NES),
+        max(gastroc.df$NES, soleus.df$NES))
+    
+    p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length, padj_limits, NES_limits)
+    p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits)
+    
+    # adjust plots
+    p.gastroc <- p.gastroc +
+      theme(
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0), "npc"),
+      ) +
+      ylab("NES\n(gastroc)") + 
+      xlab("")
+    p.soleus <- p.soleus +
+      theme(
+        axis.text.y = element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0), "npc")
+      ) +
+      ylab("NES\n(soleus)") + 
+      xlab("")
+    
+    return(p.gastroc + p.soleus)
+  }
+
+
+fgsea_dotplot <- function(fgseaRes.df, max_label_length, padj_limits, NES_limits) {
+  size_breaks <- seq(0,200,by=50)
+  size_breaks[1] <- 10
+  size_range <- c(2,8)
+  
+  fgseaRes_prep.df <- fgseaRes.df %>%
+    # TODO: might need to be changed if other labels are used (like description)
+    mutate(pathway = (
+      gsub("_", " ", pathway) %>%
+        tolower() %>%
+        stringr::str_wrap(width = max_label_length)
+    ))
+  ggplot(fgseaRes_prep.df,
+         aes(x = reorder(pathway, NES), y = NES)) +
+    geom_point(aes(size = size, color = padj)) +
+    scale_color_gradient(low = "red", high = "blue", limits = padj_limits) +
+    scale_size_continuous(range = size_range, breaks = size_breaks, limits=c(10,200)) +
+    scale_y_continuous(limits = NES_limits) +
+    xlab("Gene Set") + ylab("NES") +
+    labs(size = "Count", color="p.adjust") +
+    theme_bw() +
+    coord_flip()
+}
+```
+
+#### dotplot: top20
+```{r}
+for (group in unique(fgseaRes.combined$diff.exp)) {
+  p_combined <- combined_dotplot(group, fgseaRes.combined, topn=20)
+  ggsave(paste0("./plots/04_dotplot_", group, ".svg"),
+         p_combined)
+  print(p_combined)
+}
+```
+
+#### dotplot: all sensitive
+```{r}
+for (group in unique(fgseaRes.combined$diff.exp)) {
+  p_combined <- combined_dotplot(group, fgseaRes.combined)
+  print(p_combined)
+}
+```
+
 
 ## Enrichment score plot
 
@@ -297,23 +594,23 @@ arrange_plts <- function(plt.list) {
 
 ```
 
-### gastroc up
+### soleus up
 
 ```{r}
-plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=T)
+plot_top_enrichment(fgseaRes.soleus, CGP, ranks.gastroc, up=T)
 
 # TODO: add plot labels to return argument of plot_top_enrichment (use list probably)
 plot_labels <-
-    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.gastroc, up=T, n=9)$pathway)
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.soleus, up=T, n=9)$pathway)
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
-### gastroc down
+### soleus down
 
 ```{r}
-plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=F)
+plot_top_enrichment(fgseaRes.soleus, CGP, ranks.gastroc, up=F)
 plot_labels <-
-    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.gastroc, up=F, n=9)$pathway)
+    data.frame("label" = LETTERS[1:9], "pathway" = get_top_pathways(fgseaRes.soleus, up=F, n=9)$pathway)
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
@@ -338,23 +635,23 @@ knitr::kable(caption = "plot labels", plot_labels)
 
 ## GSEA table plot
 
-### gastroc
+### soleus
 
 top significant pathways:
 
 ```{r}
 # creating up and down regulated pathway vectors separately to maintain order
 
-topUp <- get_top_pathways(fgseaRes.gastroc, up=T, pCutoff = params$pCutoff, n=10)
-topDown <- get_top_pathways(fgseaRes.gastroc, up=F, pCutoff = params$pCutoff, n=10)
+topUp <- get_top_pathways(fgseaRes.soleus, up=T, pCutoff = params$pCutoff, n=10)
+topDown <- get_top_pathways(fgseaRes.soleus, up=F, pCutoff = params$pCutoff, n=10)
 topPathways <- bind_rows(topUp, topDown) %>%
   arrange(-NES) %>%
   pull(pathway)
 
 plotGseaTable(
   pathways = CGP[topPathways],
-  stats = ranks.gastroc,
-  fgseaRes = fgseaRes.gastroc,
+  stats = ranks.soleus,
+  fgseaRes = fgseaRes.soleus,
   gseaParam = 0.5,
   render = TRUE
 ) %>%
@@ -384,53 +681,6 @@ plotGseaTable(
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
 
-### most differential regulated pathways, both tissues
-
-using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
-
-```{r topDiff.both, warning=FALSE}
-
-pCutoff <- params$pCutoff
-fgseaRes.combined <- merge(
-  data.frame(fgseaRes.gastroc[, c("pathway", "NES", "padj")]),
-  data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
-  by = "pathway",
-  suffixes = c(".ga", ".sol")
-) %>%
-  filter(padj.ga < pCutoff | padj.sol < pCutoff) %>%
-  mutate(
-    diff.exp = case_when(
-      NES.ga  < 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both down",
-      NES.ga  > 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both up",
-      NES.ga  < 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga down, sol up",
-      NES.ga  > 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga up, sol down",
-                                  padj.ga < pCutoff & padj.sol > pCutoff ~ "only gastroc",
-      # NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
-                                  padj.ga > pCutoff & padj.sol < pCutoff ~ "only soleus",
-      # NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
-      TRUE ~ "different"
-    )
-  )
-
-# final plot
-p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
-  geom_vline(xintercept = 0) + 
-  geom_hline(yintercept = 0) + 
-  geom_point(aes(color = diff.exp)) +
-  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
-  labs(x = "gastroc", y = "soleus") +
-  # ggrepel::geom_label_repel(max.overlaps = 20) + 
-  ggtitle(label = "NES")
-
-plotly::ggplotly(p, tooltip = "all")
-```
-
-### barplot
-
-```{r diffGenesBarPlot}
-ggplot(fgseaRes.combined, aes(x = diff.exp)) +
-  geom_bar(aes(fill = diff.exp))
-```
 
 ### list of all significant pathways
 pathways will be sorted here by the absolute sum of the NES...
@@ -455,10 +705,10 @@ fgseaRes.combined %>%
   rmarkdown::paged_table(options = list(cols.min.print = 2))
 ```
 
-#### only gastroc
+#### only soleus
 ```{r}
 fgseaRes.combined %>% 
-  filter(diff.exp == "only gastroc") %>% 
+  filter(diff.exp == "only soleus") %>% 
   mutate(NES = abs(NES.ga) + abs(NES.sol)) %>% 
   select(pathway, NES) %>% 
   arrange(desc(NES)) %>%
