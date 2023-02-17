@@ -25,7 +25,7 @@ rmarkdown::render(
 
 # 04
 
-rmd.params <- list(pCutoff = pCutoff, reevaluate = F, fgsea.maxSize = 400)
+rmd.params <- list(pCutoff = pCutoff, reevaluate = F, fgsea.maxSize = 200)
 filename.addition <- "_maxSize400_"
 rmarkdown::render(
   file.path(path.analysis, "04_fgsea.Rmd"),
@@ -48,6 +48,22 @@ rmarkdown::render(
   params = rmd.params,
   knit_root_dir = project.wd
 )
+
+
+
+# 07
+
+rmd.params <- list(pCutoff = pCutoff, FCutoff = FCutoff)
+filename.addition <- ""
+rmarkdown::render(
+  file.path(path.analysis, "07_currentPlots.Rmd"),
+  output_file = file.path(path.analysis, paste0("07_currentPlots", filename.addition, ".html")),
+  output_dir = path.reports,
+  output_format = "html_document",
+  params = rmd.params,
+  knit_root_dir = project.wd
+)
+
 
 
 # testing
