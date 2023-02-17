@@ -50,10 +50,12 @@ if (! exists("knitting_parameters_used")) {
 
 
 ```{r plotSettings, include=FALSE}
-customColors <- c("WT"= "#00C3C6","KO"= "#FF6C67")
+condition_pal <- c("WT"= "#00C3C6","KO"= "#FF6C67")
+# color palette for the tissues
+# tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
+tissue_pal <- c(gastroc = "orange", soleus="purple")
 ```
 
-# DESeq
 
 ## loading data
 
@@ -276,7 +278,8 @@ ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
   # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
   labs(x = "gastroc", y = "soleus") +
   ggrepel::geom_label_repel(max.overlaps = 20) + 
-  ggtitle(label = "stat (Wald test)")
+  ggtitle(label = "stat (Wald test)") +
+  theme_bw()
 ```
 
 ```{r include=FALSE}
@@ -327,7 +330,7 @@ boxplot.genes <- function(counts.df, title ="", FCutoff = 1) {
     scale_y_log10() +
     xlab("Genes") +
     ylab("Normalized Counts") +
-    scale_fill_manual(values = customColors) +
+    scale_fill_manual(values = condition_pal) +
     ggtitle(title) +
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5)) +
@@ -491,7 +494,7 @@ boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, 
     scale_y_log10() +
     xlab("Genes") +
     ylab("Normalized Counts") +
-    scale_fill_manual(values = customColors) +
+    scale_fill_manual(values = condition_pal) +
     ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5)) +
@@ -530,7 +533,7 @@ constellation is obtained.
 
 significant overview with all genes:
 ```{r}
-venn.colors <- c(genes = "white", gastroc = "#FFB08E", soleus = "#FF6638")
+venn.colors <- c(genes = "white", tissue_pal)
 
 gene_sets <- c(
   "all genes" = sign_gene_stats$`all genes` - sign_gene_stats$shared_sig_genes,
@@ -558,7 +561,7 @@ significant grouped:
 ```{r vennDiagram}
 col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
-venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", scales::hue_pal()(4))
+venn.colors <- c(tissue_pal, scales::hue_pal()(4))
 
 # sets for the venn/euler diagram (exclusive counts)
 gene_sets <- c(
@@ -592,22 +595,172 @@ gene_sets <- c(
 
 
 # 2nd option: euler two tissues
-plot(
+p <- plot(
   euler(gene_sets),
   quantities = T,
   legend = list(side = "right"),
   fills = venn.colors,
   main = "significant genes"
 )
+ggsave("./plots/03_euler.svg", p)
+p
 
 
 # 3rd option: venn two tissues
-plot(
-  venn(gene_sets),
-  fills = venn.colors,
+library(eulerr)
+p <- plot(
+  eulerr::venn(gene_sets),
+  fills = tissue_pal,
   main = "significant genes"
 )
+ggsave("./plots/03_venn.svg", p)
+p
 ```
+
+
+# Heatmap
+
+```{r fig.width=4, fig.height=4, message=FALSE}
+library(ComplexHeatmap)
+library(RColorBrewer)
+
+zscore <- function(M) {
+  s <- apply( M,1,sd )      # standard deviation
+  µ <- apply( M, 1, mean )  # mean
+  M.z <- (M - µ) / s        # zscore
+  return(M.z)
+}
+
+sign_genes <-
+  unique(c(
+    row.names(gastroc_res.filtered),
+    row.names(soleus_res.filtered)
+  )) 
+sign_genes <-
+  sign_genes[sign_genes %in% rownames(counts.gastroc) &
+               sign_genes %in% rownames(counts.soleus)]
+
+counts_sign_zscored <- merge(
+  zscore(counts.gastroc[sign_genes,]),
+  zscore(counts.soleus[sign_genes,]),
+  by = 0,
+  suffixes = c(".ga", ".sol")
+) %>% 
+  tibble::column_to_rownames(var="Row.names") %>%
+  as.matrix()
+
+
+plotCHM <- function(counts_sign) {
+  mypalette <- brewer.pal(11, "RdYlBu")
+  # (reverse to map style of other heatmap in manuscript)
+  morecols <- colorRampPalette(rev(mypalette))
+  
+  tissue_vec <- c(rep("gastroc", 12), rep("soleus", 12))
+  condition_vec <- c(rep(c(rep("WT", 6), rep("KO", 6)),2))
+  top_annot <-
+    HeatmapAnnotation(
+      tissue = tissue_vec,
+      condition = condition_vec,
+      col = list(tissue = tissue_pal, condition = c("WT" = "white", "KO" = "gray")),
+      gp = gpar(col = "darkgray"),
+      show_legend = FALSE
+    )
+  
+  chm <- Heatmap(
+    counts_sign,
+    row_title = "genes",
+    name = "zscore",
+    show_row_names = FALSE,
+    show_column_names = FALSE,
+    column_title = "samples",
+    col = rev(morecols(50)),
+    column_title_side = "bottom",
+    top_annotation = top_annot
+  )
+  
+  # creating custom annotation legend (to obtain the gray border)
+  condition_legend = Legend(
+    labels = c("WT", "KO"),
+    legend_gp = gpar(fill = c("white", "gray")),
+    border = "darkgray",
+    title = "condition"
+  )
+  tissue_legend = Legend(
+    labels = c("gastroc", "soleus"),
+    legend_gp = gpar(fill = c("orange", "purple")),
+    border = "darkgray",
+    title = "tissue"
+  )
+  legend_list <- list(condition_legend, tissue_legend)
+  
+  draw(chm, annotation_legend_list = legend_list)
+}
+
+svglite::svglite("./plots/03_heatmap_sign_genes.svg", width=6, height=6)
+plotCHM(counts_sign_zscored)
+dev.off()
+```
+
+![](../../plots/03_heatmap_sign_genes.svg)
+
+## pca (z-scored)
+
+```{r pca.both, message=FALSE}
+pca <- prcomp(t(counts_sign_zscored), scale. = T)
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                     X = pca$x[, 1],
+                     Y = pca$x[, 2]) %>%
+mutate(type = substr(Sample, 1, 2),
+       tissue = stringr::str_extract(Sample,"[:alpha:]+$"))
+
+plt <-
+autoplot(
+  pca,
+  data = pca.data,
+  colour = 'type',
+  shape = 'tissue',
+  label.show.legend = FALSE
+) +
+ggtitle("PCA z-scored sign. genes")+
+theme_bw()
+ggsave(filename = "./plots/03_pca_dea_sign_zscored.svg")
+plt
+```
+
+## pca (counts)
+```{r}
+counts_sign <-
+  merge(counts.gastroc[sign_genes,],
+        counts.soleus[sign_genes,],
+        by = 0,
+        suffixes = c("_gastroc", "_soleus")) %>%
+  tibble::column_to_rownames("Row.names")
+
+pca <- prcomp(t(counts_sign), scale. = T)
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                     X = pca$x[, 1],
+                     Y = pca$x[, 2]) %>%
+mutate(type = substr(Sample, 1, 2),
+       tissue = stringr::str_extract(Sample,"[:alpha:]+$"))
+
+plt <-
+autoplot(
+  pca,
+  data = pca.data,
+  colour = 'type',
+  shape = 'tissue',
+  label.show.legend = FALSE
+) +
+ggtitle("PCA sign. genes")+  
+theme_bw()
+ggsave(filename = "./plots/03_pca_dea_sign_counts.svg")
+plt
+ 
+ 
+```
+
 
 # save R ojects
 

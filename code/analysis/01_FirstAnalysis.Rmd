@@ -30,7 +30,6 @@ if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
 library(ComplexHeatmap)
 library(circlize)
 library(RColorBrewer)
-library(gplots) # (heatmap.2)
 library(SummarizedExperiment)
 ```
 
@@ -334,8 +333,9 @@ plt <-
     colour = 'type',
     label.show.legend = FALSE
   ) +
-  ggtitle("PCA gastroc")
-# ggsave(filename = "./plots/04_pca_gastroc_filtered.png", plt, dpi=300)
+  ggtitle("PCA gastroc")+
+  theme_bw()
+ggsave(filename = "./plots/04_pca_gastroc_filtered.svg", plt)
 plt
 ```
 
@@ -357,8 +357,9 @@ plt <-
     shape = 17,
     label.show.legend = FALSE
   ) +
-  ggtitle("PCA soleus")
-# ggsave(filename = "./plots/04_pca_soleus_filtered.png", plt, dpi=300)
+  ggtitle("PCA soleus")+
+  theme_bw()
+ggsave(filename = "./plots/04_pca_soleus_filtered.svg", plt)
 plt
 ```
 
@@ -390,8 +391,9 @@ plt <-
     shape = 'tissue',
     label.show.legend = FALSE
   ) +
-  ggtitle("PCA both tissues")
-# ggsave(filename = "./plots/04_pca_both_tissues_filtered.png", plt, dpi=300)
+  ggtitle("PCA both tissues")+
+  theme_bw()
+ggsave(filename = "./plots/04_pca_both_tissues_filtered.svg", plt)
 plt
 ```
 
