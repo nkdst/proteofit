@@ -345,19 +345,6 @@ col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
 venn.colors <- c(tissue_pal, scales::hue_pal()(4))
 
-# sets for the venn/euler diagram (exclusive counts)
-gene_sets <- c(
-  "gastroc" = sign_gene_stats$gastroc - sign_gene_stats$shared_sig_genes,
-  "soleus" = sign_gene_stats$soleus - sign_gene_stats$shared_sig_genes,
-  "gastroc&soleus" = sign_gene_stats$shared_sig_genes,
-  "gastroc&soleus&both down" = sign_gene_stats$`both down`,
-  "gastroc&soleus&both up" = sign_gene_stats$`both up`,
-  "gastroc&soleus&ga up, sol down" = sign_gene_stats$`ga up, sol down`,
-  "gastroc&soleus&ga down, sol up" = sign_gene_stats$`ga down, sol up`
-)
-# 'gastroc&soleus': if this line is omitted, then all intersects will be denoted 
-# with 0 (which was the goal to omit)
-
 # only the two tissues
 gene_sets <- c(
   "gastroc" = sign_gene_stats$gastroc - sign_gene_stats$shared_sig_genes,
@@ -682,6 +669,54 @@ p <- ggplot(fgseaRes.combined, aes(x = diff.exp)) +
 ggsave(filename = file.path(path.currentPlots, "03_gsea_scatter_barplot.svg"), p)
 p
 ```
+
+### Venn/Euler-Diagram
+
+```{r vennDiagramGSEA}
+col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
+# venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
+venn.colors <- c(tissue_pal, scales::hue_pal()(4))
+
+sign_geneSets_gastroc <-
+  data.frame(fgseaRes.gastroc[, c("pathway", "padj")]) %>%
+  filter(padj < pCutoff) %>% 
+  pull(pathway)
+
+
+sign_geneSets_soleus <-
+  data.frame(fgseaRes.soleus[, c("pathway", "padj")]) %>%
+  filter(padj < pCutoff) %>% 
+  pull(pathway)
+
+# only the two tissues
+gene_sets <- list(
+  "gastroc" = sign_geneSets_gastroc,
+  "soleus" = sign_geneSets_soleus#,
+  # "gastroc&soleus" = sign_gene_stats$shared_sig_genes
+)
+
+# 1st option: euler two tissues
+p <- plot(
+  euler(gene_sets),
+  quantities = T,
+  legend = list(side = "right"),
+  fills = venn.colors,
+  main = "significant gene sets (GSEA)"
+)
+ggsave(filename = file.path(path.currentPlots, "03_euler.svg"), p)
+p
+
+# 2nd option: venn two tissues
+library(eulerr)
+p <- plot(
+  eulerr::venn(gene_sets),
+  fills = tissue_pal,
+  main = "significant gene sets (GSEA)"
+)
+ggsave(filename = file.path(path.currentPlots, "03_venn.svg"), p)
+p
+```
+
 
 ### dotplot
 ```{r echo=FALSE}
