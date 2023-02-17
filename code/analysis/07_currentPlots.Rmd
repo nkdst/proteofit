@@ -760,9 +760,9 @@ combined_dotplot <-
 
 fgsea_dotplot <-
   function(fgseaRes.df,
-           max_label_length,
-           padj_limits,
-           NES_limits) {
+           max_label_length=25,
+           padj_limits=NULL,
+           NES_limits=NULL) {
   size_breaks <- seq(0,200,by=50)
   size_breaks[1] <- 10
   size_range <- c(2,8)
@@ -800,6 +800,27 @@ fgsea_dotplot <-
     coord_flip() +
     theme(axis.text.y = element_text(size = label_size))
   }
+```
+
+
+```{r}
+
+  ggplot(fgseaRes_prep.df, aes(x = pathway, y = NES)) +
+    geom_point(aes(size = size, color = padj)) +
+    scale_color_gradient(low = "red",
+                         high = "blue",
+                         limits = NULL) +
+    scale_size_continuous(range = size_range,
+                          breaks = size_breaks,
+                          limits = c(10, 200)) +
+    scale_y_continuous(limits = NULL) +
+    # scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+    scale_x_discrete(labels = scales::label_wrap(max_label_length)) +
+    xlab("Gene Set") + ylab("NES") +
+    labs(size = "Count", color = "p.adjust") +
+    theme_bw() +
+    coord_flip() +
+    theme(axis.text.y = element_text(size = label_size))
 ```
 
 
@@ -845,6 +866,21 @@ ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group,
 p_combined
 ```
 
+```{r dotplotGastrocSingle}
+pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
+
+gastroc.df <-
+  filter(fgseaRes.gastroc, pathway %in% pathways) %>%
+  arrange(NES)
+
+p.gastroc <-
+  fgsea_dotplot(gastroc.df, max_label_length = 100)
+ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
+       p.gastroc)
+p.gastroc
+```
+
+
 
 #### dotplot: "only soleus"
 gets adjusted by the function well. The .svg file looks okay
@@ -856,6 +892,21 @@ p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100,
 ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
        p_combined)
 p_combined
+```
+
+
+```{r dotplotSoleusSingle}
+pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
+
+soleus.df <-
+  filter(fgseaRes.soleus, pathway %in% pathways) %>%
+  arrange(NES)
+
+p.soleus <-
+  fgsea_dotplot(soleus.df, max_label_length = 100)
+ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
+       p.soleus)
+p.soleus
 ```
 
 #### dotplot: top20
