@@ -125,13 +125,18 @@ counts.soleus.top <- mostVariableRows(counts.soleus)
 Here also taking the top 1000 most variable genes of each tissue and merging them.
 
 ```{r pca_filterd_genes, message=FALSE}
-# combine both count tables
+
+most_variable_genes <- c(row.names(counts.gastroc.top), row.names(counts.soleus.top)) %>% 
+  unique()
+
 counts.both <-
-  merge(counts.gastroc.top,
-        counts.soleus.top,
+  merge(counts.gastroc[most_variable_genes, ],
+        counts.soleus[most_variable_genes, ],
         by = 0,
+        all = T,
         suffixes = c("_gastroc", "_soleus")) %>%
-  tibble::column_to_rownames("Row.names")
+  tibble::column_to_rownames("Row.names") %>% 
+  na.omit()
 
 pca <- prcomp(t(counts.both), scale. = T)
 
@@ -150,7 +155,7 @@ plt <-
     label.show.legend = FALSE
   ) +
   scale_color_manual(values = tissue_pal) +
-  ggtitle("PCA top 1000 most variable genes (t.test)")+
+  ggtitle("PCA top 1000 most variable genes of each tissue (sd)")+
   theme_bw()
 ggsave(filename = file.path(path.currentPlots, "01_pca_both_tissues_filtered.svg"), plt)
 plt
@@ -191,7 +196,7 @@ if (! exists("knitting_parameters_used")) {
 
 ## Volcano Plot
 ```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
-volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
+volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = character()) {
   gene_names <-
     rowData(se)[rownames(result), c("gene_name"), drop = F]
   results.df <- result %>%
@@ -465,7 +470,7 @@ plotCHM <- function(counts_sign) {
 }
 
 svglite::svglite(
-  file.path(path.currentPlots, "03_heatmap_sign_genes.svg"),
+  file.path(path.currentPlots, "02_heatmap_sign_genes.svg"),
   width = 6,
   height = 6
 )
@@ -499,7 +504,7 @@ autoplot(
   ggtitle("PCA significantly differentially expressed genes") +
   scale_color_manual(values = unname(tissue_pal)) +
   theme_bw()
-ggsave(filename = file.path(path.currentPlots, "03_pca_dea_sign.svg"), p)
+ggsave(filename = file.path(path.currentPlots, "02_pca_dea_sign.svg"), p)
 p
 ```
 
@@ -802,28 +807,6 @@ fgsea_dotplot <-
   }
 ```
 
-
-```{r}
-
-  ggplot(fgseaRes_prep.df, aes(x = pathway, y = NES)) +
-    geom_point(aes(size = size, color = padj)) +
-    scale_color_gradient(low = "red",
-                         high = "blue",
-                         limits = NULL) +
-    scale_size_continuous(range = size_range,
-                          breaks = size_breaks,
-                          limits = c(10, 200)) +
-    scale_y_continuous(limits = NULL) +
-    # scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
-    scale_x_discrete(labels = scales::label_wrap(max_label_length)) +
-    xlab("Gene Set") + ylab("NES") +
-    labs(size = "Count", color = "p.adjust") +
-    theme_bw() +
-    coord_flip() +
-    theme(axis.text.y = element_text(size = label_size))
-```
-
-
 !Note: Different to most other plots, the dotplots seem to be created best by
 running the chunks manually. This results in automatic axis scaling with more 
 entries, so that the labels do not overlap (which is curiously not the case if
@@ -836,8 +819,8 @@ only 7 gene sets => fits well in the plot
 group = "both up"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
 
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
-       p_combined)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+#        p_combined)
 p_combined
 ```
 
@@ -848,8 +831,8 @@ gets adjusted by the function well. The .svg file looks okay
 group = "both down"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
 
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
-       p_combined)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+#        p_combined)
 p_combined
 ```
 
@@ -861,12 +844,13 @@ gets adjusted by the function well. The .svg file looks okay
 group = "only gastrocnemius"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100)
 
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
-       p_combined)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+#        p_combined)
 p_combined
 ```
 
 ```{r dotplotGastrocSingle}
+group = "only gastrocnemius"
 pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
 
 gastroc.df <-
@@ -875,8 +859,8 @@ gastroc.df <-
 
 p.gastroc <-
   fgsea_dotplot(gastroc.df, max_label_length = 100)
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
-       p.gastroc)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
+#        p.gastroc)
 p.gastroc
 ```
 
@@ -889,13 +873,14 @@ gets adjusted by the function well. The .svg file looks okay
 group = "only soleus"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100, sort_by_gastroc = F)
 
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
-       p_combined)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+#        p_combined)
 p_combined
 ```
 
 
 ```{r dotplotSoleusSingle}
+group = "only soleus"
 pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
 
 soleus.df <-
@@ -904,8 +889,8 @@ soleus.df <-
 
 p.soleus <-
   fgsea_dotplot(soleus.df, max_label_length = 100)
-ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
-       p.soleus)
+# ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
+#        p.soleus)
 p.soleus
 ```
 
