@@ -729,8 +729,10 @@ combined_dotplot <-
     pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
     
     gastroc.df <- filter(fgseaRes.gastroc, pathway %in% pathways) %>% 
-      top_n(topn, wt = abs(NES))
-    soleus.df <- filter(fgseaRes.soleus, pathway %in% gastroc.df$pathway)
+      top_n(topn, wt = abs(NES)) %>% 
+      .[order(NES, decreasing = T),]
+    soleus.df <- filter(fgseaRes.soleus, pathway %in% gastroc.df$pathway) %>% 
+      .[match(gastroc.df$pathway, pathway)]
     
     padj_limits <-
       c(min(gastroc.df$padj, soleus.df$padj),
@@ -741,7 +743,8 @@ combined_dotplot <-
         max(gastroc.df$NES, soleus.df$NES))
     
     p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length, padj_limits, NES_limits)
-    p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits)
+    
+    p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits, reorder_by_NES=FALSE)
     
     # adjust plots
     p.gastroc <- p.gastroc +
@@ -763,35 +766,91 @@ combined_dotplot <-
   }
 
 
-fgsea_dotplot <- function(fgseaRes.df, max_label_length, padj_limits, NES_limits) {
+fgsea_dotplot <-
+  function(fgseaRes.df,
+           max_label_length,
+           padj_limits,
+           NES_limits,
+           reorder_by_NES = TRUE) {
   size_breaks <- seq(0,200,by=50)
   size_breaks[1] <- 10
   size_range <- c(2,8)
   
+  # adjust label size if the plot has too many sets:
+  label_size <- 8
+  nsets <- nrow(fgseaRes.df)
+  if (nsets > 15) {
+    label_size <- label_size - (0.05 * nsets)
+    max_label_length <- nsets + 10
+  }
+  
   fgseaRes_prep.df <- fgseaRes.df %>%
     # TODO: might need to be changed if other labels are used (like description)
-    mutate(pathway = (
-      gsub("_", " ", pathway) %>%
-        tolower() %>%
-        stringr::str_wrap(width = max_label_length)
-    ))
+    mutate(pathway = gsub("_", " ", pathway) %>% tolower())
+  
+  # TODO: can't sort this properly
   ggplot(fgseaRes_prep.df,
-         aes(x = reorder(pathway, NES), y = NES)) +
+         # aes(x = ifelse( # is vectorized, does not work
+         #   reorder_by_NES, reorder(pathway, NES), pathway
+         # ), y = NES)) +
+         aes(x = pathway, y = NES)) +
     geom_point(aes(size = size, color = padj)) +
-    scale_color_gradient(low = "red", high = "blue", limits = padj_limits) +
-    scale_size_continuous(range = size_range, breaks = size_breaks, limits=c(10,200)) +
+    scale_color_gradient(low = "red",
+                         high = "blue",
+                         limits = padj_limits) +
+    scale_size_continuous(range = size_range,
+                          breaks = size_breaks,
+                          limits = c(10, 200)) +
     scale_y_continuous(limits = NES_limits) +
+    # scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+    scale_x_discrete(labels = scales::label_wrap(max_label_length)) +
     xlab("Gene Set") + ylab("NES") +
-    labs(size = "Count", color="p.adjust") +
+    labs(size = "Count", color = "p.adjust") +
     theme_bw() +
-    coord_flip()
-}
+    coord_flip() +
+    theme(axis.text.y = element_text(size = label_size))
+  }
+```
+
+#### dotplot: "both upregulated"
+only 7 gene sets => fits well in the plot
+```{r dotplotBothUp}
+group = "both up"
+p_combined <- combined_dotplot(group, fgseaRes.combined)
+
+ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+       p_combined)
+p_combined
+```
+
+
+#### dotplot: "both down"
+gets adjusted by the function well. The .svg file looks okay
+```{r dotplotBothDown}
+group = "both down"
+p_combined <- combined_dotplot(group, fgseaRes.combined)
+
+ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+       p_combined)
+p_combined
+```
+
+#### dotplot: "only soleus"
+gets adjusted by the function well. The .svg file looks okay
+
+```{r dotplotSoleus}
+group = "only soleus"
+p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100)
+
+ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+       p_combined)
+p_combined
 ```
 
 #### dotplot: top20
-```{r}
+```{r include=FALSE}
 for (group in unique(fgseaRes.combined$diff.exp)) {
-  p_combined <- combined_dotplot(group, fgseaRes.combined, topn=20)
+  p_combined <- combined_dotplot(group, fgseaRes.combined)
   
   ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
          p_combined)
@@ -799,10 +858,3 @@ for (group in unique(fgseaRes.combined$diff.exp)) {
 }
 ```
 
-#### dotplot: all sensitive
-```{r}
-for (group in unique(fgseaRes.combined$diff.exp)) {
-  p_combined <- combined_dotplot(group, fgseaRes.combined)
-  print(p_combined)
-}
-```
