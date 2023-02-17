@@ -20,6 +20,13 @@ params:
   knitting_parameters_used:
     label: "helper variable for knitting, should not be changed"
     value: TRUE
+  fgsea.maxSize:
+    label: "parameter for `fgsea`: 'Maximal size of a gene set to test. All pathways above the threshold are excluded.'"
+    value: 200
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
 ---
 
 ```{r setup, include=FALSE}
@@ -249,7 +256,7 @@ p
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
 `FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
-```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+```{r scatterDEA, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   res.filtered <- deseq.result %>%
     data.frame() %>%
@@ -308,7 +315,7 @@ p
 
 ### barplot
 
-```{r diffGenesBarPlot}
+```{r dea_scatter_barplot}
 p <- ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp)) +
   theme_bw()
@@ -381,7 +388,7 @@ p
 ```
 
 
-# Heatmap
+## Heatmap
 
 ```{r fig.width=4, fig.height=4, message=FALSE}
 library(ComplexHeatmap)
@@ -470,7 +477,8 @@ dev.off()
 
 ![](../../plots/current/03_heatmap_sign_genes.svg)
 
-## pca (z-scored)
+### pca (z-scored)
+Here the z-scored count matrix is used to create the pca plot
 
 ```{r pca.zscored, message=FALSE}
 pca <- prcomp(t(counts_sign_zscored), scale. = T)
@@ -495,7 +503,11 @@ ggsave(filename = file.path(path.currentPlots, "03_pca_dea_sign_zscored.svg"), p
 p
 ```
 
-## pca (counts)
+### pca (counts)
+
+gathering the original count matrices of both tissues for the significant genes,
+which were shown in the heatmap.
+
 ```{r}
 counts_sign <-
   merge(counts.gastroc[sign_genes,],
@@ -524,4 +536,238 @@ autoplot(
   theme_bw()
 ggsave(filename = file.path(path.currentPlots, "03_pca_dea_sign_counts.svg"), p)
 p
+```
+
+# 3. fgsea
+
+```{r fgseaSetup, include=FALSE}
+library(fgsea)
+
+load("./data/Robjects/02_annot.RData") # for entrezgene_id
+```
+
+
+```{r reading_pathways, include=FALSE}
+# canonical pathways (1687 gene sets):
+CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt")
+```
+
+
+## ranks
+
+```{r getting_ranks}
+getRanks <- function(res, annot) {
+  # only taking genes which have entrezgene_ids assigned to them
+  genes_with_entrez <- select(annot, GeneID, entrezgene_id) %>% 
+    filter(!is.na(entrezgene_id))
+  
+  ranks <- as.data.frame(res) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    merge(genes_with_entrez, by = "GeneID") %>%
+    arrange(desc(stat)) %>% 
+    select(entrezgene_id, stat) %>% 
+    tibble::deframe() # creating a named num from two columns
+  return(ranks)
+}
+
+ranks.gastroc <- getRanks(res.gastroc, annot)
+ranks.soleus <- getRanks(res.soleus, annot)
+# TODO: why (again) is the soleus gene count seemingly 300 below soleus gene count / ranks count
+# -> seems because of e.g. the cutoff at DESeq
+```
+
+## applying fgsea
+
+    fgseaRes <- fgsea(
+      pathways = CGP,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = `r params$fgsea.maxSize`
+    )
+
+```{r fgsea_res_load, include=FALSE}
+# ' returns the fgsea result
+# ' `tissue` needs to be one of {"soleus", "soleus"}
+# ' Also saves the results locally to avoid too much queries
+get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
+  robjects.path <- file.path(".", "data", "Robjects")
+  fgseaRes.path <- file.path(
+    robjects.path,
+    "04_fgsea_results",
+    tissue,
+    paste0("maxSize_", params$fgsea.maxSize, ".rds")
+  )
+  fgseaRes.dir <- dirname(fgseaRes.path)
+  
+  if (file.exists(fgseaRes.path) & !params$reevaluate) {
+    message("fgsea result found in directory! Previous version will be loaded ...")
+    return(readRDS(file = fgseaRes.path))
+  } else {
+    # perform fgsea and save the result
+    fgseaRes <- fgsea(
+      pathways = pathways,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = maxSize
+    )
+    
+    if (saveResults) {
+      if (!dir.exists(fgseaRes.dir))
+        dir.create(fgseaRes.dir, recursive = T)
+      saveRDS(fgseaRes, file = fgseaRes.path)
+    }
+    return(fgseaRes)
+  }
+}
+
+fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
+fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
+```
+
+
+## most differential regulated pathways, both tissues
+
+using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
+
+```{r topDiff.both, warning=FALSE}
+
+pCutoff <- params$pCutoff
+fgseaRes.combined <- merge(
+  data.frame(fgseaRes.gastroc[, c("pathway", "NES", "padj")]),
+  data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
+  by = "pathway",
+  suffixes = c(".ga", ".sol")
+) %>%
+  filter(padj.ga < pCutoff | padj.sol < pCutoff) %>%
+  mutate(
+    diff.exp = case_when(
+      NES.ga  < 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both down",
+      NES.ga  > 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "both up",
+      NES.ga  < 0 & NES.sol > 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga down, sol up",
+      NES.ga  > 0 & NES.sol < 0 & padj.ga < pCutoff & padj.sol < pCutoff ~ "ga up, sol down",
+                                  padj.ga < pCutoff & padj.sol > pCutoff ~ "only gastroc",
+      # NES.ga  > 0 &               padj.ga < pCutoff & padj.sol > pCutoff ~ "ga up",
+                                  padj.ga > pCutoff & padj.sol < pCutoff ~ "only soleus",
+      # NES.sol > 0 &               padj.ga > pCutoff & padj.sol < pCutoff ~ "sol up",
+      TRUE ~ "different"
+    )
+  )
+
+# final plot
+p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
+  geom_vline(xintercept = 0) + 
+  geom_hline(yintercept = 0) + 
+  geom_point(aes(color = diff.exp)) +
+  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  labs(x = "gastroc", y = "soleus") +
+  # ggrepel::geom_label_repel(max.overlaps = 20) + 
+  ggtitle(label = "NES") +
+  theme_bw()
+
+ggsave(filename = file.path(path.currentPlots, "03_gsea_scatter.svg"), p)
+p
+
+# interactive:
+# plotly::ggplotly(p, tooltip = "all")
+```
+
+
+### barplot
+
+```{r gsea_scatter_barplot}
+p <- ggplot(fgseaRes.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp)) +
+  theme_bw()
+
+ggsave(filename = file.path(path.currentPlots, "03_gsea_scatter_barplot.svg"), p)
+p
+```
+
+### dotplot
+```{r echo=FALSE}
+combined_dotplot <-
+  function(group,
+           fgseaRes.combined = fgseaRes.combined,
+           max_label_length = 25, topn=6e6) {
+    
+    # get pathways of the respective group
+    pathways <- filter(fgseaRes.combined, diff.exp == group)$pathway
+    
+    gastroc.df <- filter(fgseaRes.gastroc, pathway %in% pathways) %>% 
+      top_n(topn, wt = abs(NES))
+    soleus.df <- filter(fgseaRes.soleus, pathway %in% gastroc.df$pathway)
+    
+    padj_limits <-
+      c(min(gastroc.df$padj, soleus.df$padj),
+        max(gastroc.df$padj, soleus.df$padj))
+    
+    NES_limits <- 
+      c(min(gastroc.df$NES, soleus.df$NES),
+        max(gastroc.df$NES, soleus.df$NES))
+    
+    p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length, padj_limits, NES_limits)
+    p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits)
+    
+    # adjust plots
+    p.gastroc <- p.gastroc +
+      theme(
+        legend.position = "none",
+        plot.margin = unit(c(0, 0, 0, 0), "npc"),
+      ) +
+      ylab("NES\n(gastroc)") + 
+      xlab("")
+    p.soleus <- p.soleus +
+      theme(
+        axis.text.y = element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0), "npc")
+      ) +
+      ylab("NES\n(soleus)") + 
+      xlab("")
+    
+    return(p.gastroc + p.soleus)
+  }
+
+
+fgsea_dotplot <- function(fgseaRes.df, max_label_length, padj_limits, NES_limits) {
+  size_breaks <- seq(0,200,by=50)
+  size_breaks[1] <- 10
+  size_range <- c(2,8)
+  
+  fgseaRes_prep.df <- fgseaRes.df %>%
+    # TODO: might need to be changed if other labels are used (like description)
+    mutate(pathway = (
+      gsub("_", " ", pathway) %>%
+        tolower() %>%
+        stringr::str_wrap(width = max_label_length)
+    ))
+  ggplot(fgseaRes_prep.df,
+         aes(x = reorder(pathway, NES), y = NES)) +
+    geom_point(aes(size = size, color = padj)) +
+    scale_color_gradient(low = "red", high = "blue", limits = padj_limits) +
+    scale_size_continuous(range = size_range, breaks = size_breaks, limits=c(10,200)) +
+    scale_y_continuous(limits = NES_limits) +
+    xlab("Gene Set") + ylab("NES") +
+    labs(size = "Count", color="p.adjust") +
+    theme_bw() +
+    coord_flip()
+}
+```
+
+#### dotplot: top20
+```{r}
+for (group in unique(fgseaRes.combined$diff.exp)) {
+  p_combined <- combined_dotplot(group, fgseaRes.combined, topn=20)
+  
+  ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, ".svg")),
+         p_combined)
+  print(p_combined)
+}
+```
+
+#### dotplot: all sensitive
+```{r}
+for (group in unique(fgseaRes.combined$diff.exp)) {
+  p_combined <- combined_dotplot(group, fgseaRes.combined)
+  print(p_combined)
+}
 ```
