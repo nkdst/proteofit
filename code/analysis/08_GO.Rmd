@@ -1,0 +1,159 @@
+---
+title: "08_GO"
+author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
+output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    df_print: paged
+# editor_options: 
+#   chunk_output_type: inline
+params:
+  FCutoff:
+    label: cutoff for the log2FoldChange
+    value: 1
+  pCutoff:
+    label: "cutoff for the adjusted p-Value"
+    value: 0.01
+  knitting_parameters_used:
+    label: "helper variable for knitting, should not be changed"
+    value: TRUE
+  fgsea.maxSize:
+    label: "parameter for `fgsea`: 'Maximal size of a gene set to test. All pathways above the threshold are excluded.'"
+    value: 200
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(clusterProfiler)
+```
+
+```{r include=FALSE}
+path.currentPlots <- file.path(".", "plots", "current")
+
+if (! exists("knitting_parameters_used")) {
+  # when knitting with parameters the following variables are already set
+  FCutoff <- 1
+  pCutoff <- 0.01
+} else {
+  FCutoff <- params$FCutoff
+  pCutoff <- params$pCutoff
+} 
+```
+
+```{r plotSettings, include=FALSE}
+condition_pal <- c("WT"= "#00C3C6","KO"= "#FF6C67")
+
+# color palette for the tissues
+# tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
+tissue_pal <- c(gastroc = "orange", soleus="purple")
+```
+
+
+```{r loadDESeqResult}
+# library(SummarizedExperiment)
+
+load("./data/Robjects/03_DDS.RData")
+
+# se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
+# se.soleus <- readRDS("./data/Robjects/01_se.soleus.rds")
+
+```
+
+
+# clusterProfiler: enrichGO
+```{r}
+entrez_ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff)
+enrichGO()
+
+```
+
+
+
+```{r reading_pathways, include=FALSE}
+# canonical pathways (1687 gene sets):
+CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt")
+```
+
+
+## ranks
+
+```{r getting_ranks}
+getRanks <- function(res, annot) {
+  # only taking genes which have entrezgene_ids assigned to them
+  genes_with_entrez <- select(annot, GeneID, entrezgene_id) %>% 
+    filter(!is.na(entrezgene_id))
+  
+  ranks <- as.data.frame(res) %>%
+    tibble::rownames_to_column("GeneID") %>%
+    merge(genes_with_entrez, by = "GeneID") %>%
+    arrange(desc(stat)) %>% 
+    select(entrezgene_id, stat) %>% 
+    tibble::deframe() # creating a named num from two columns
+  return(ranks)
+}
+
+ranks.gastroc <- getRanks(res.gastroc, annot)
+ranks.soleus <- getRanks(res.soleus, annot)
+# TODO: why (again) is the soleus gene count seemingly 300 below soleus gene count / ranks count
+# -> seems because of e.g. the cutoff at DESeq
+```
+
+## applying fgsea
+
+    fgseaRes <- fgsea(
+      pathways = CGP,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = `r params$fgsea.maxSize`
+    )
+
+```{r fgsea_res_load, include=FALSE}
+# ' returns the fgsea result
+# ' `tissue` needs to be one of {"soleus", "soleus"}
+# ' Also saves the results locally to avoid too much queries
+get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
+  robjects.path <- file.path(".", "data", "Robjects")
+  fgseaRes.path <- file.path(
+    robjects.path,
+    "04_fgsea_results",
+    tissue,
+    paste0("maxSize_", params$fgsea.maxSize, ".rds")
+  )
+  fgseaRes.dir <- dirname(fgseaRes.path)
+  
+  if (file.exists(fgseaRes.path) & !params$reevaluate) {
+    message("fgsea result found in directory! Previous version will be loaded ...")
+    return(readRDS(file = fgseaRes.path))
+  } else {
+    # perform fgsea and save the result
+    fgseaRes <- fgsea(
+      pathways = pathways,
+      stats    = ranks,
+      minSize  = 15,
+      maxSize  = maxSize
+    )
+    
+    if (saveResults) {
+      if (!dir.exists(fgseaRes.dir))
+        dir.create(fgseaRes.dir, recursive = T)
+      saveRDS(fgseaRes, file = fgseaRes.path)
+    }
+    return(fgseaRes)
+  }
+}
+
+fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
+fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
+```
+
