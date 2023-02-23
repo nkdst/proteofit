@@ -41,15 +41,75 @@ library(SummarizedExperiment)
 gastroc <-
   readr::read_tsv("./data/counts/readcount_genename_gastroc.xls",
                   show_col_types = F) %>%
+  arrange(gene_id) %>% 
   tibble::column_to_rownames(var = "gene_id")
 counts.gastroc <- gastroc[, 1:12]
 
 # TODO: fix annotations: several entries are incomplete whereas the gastroc seems to be complete
-soleus <- readr::read_tsv("./data/counts/readcount_genename_soleus.xls", show_col_types = F) %>%
+soleus <-
+  readr::read_tsv("./data/counts/readcount_genename_soleus.xls",
+                  show_col_types = F) %>% 
+  arrange(gene_id) %>% 
   tibble::column_to_rownames(var = "gene_id")
 counts.soleus <- soleus[, 1:12]
 
 ```
+
+```{r compareAnnotations}
+# soleus contains `NA` values, whereas gastroc does not:
+anyNA(gastroc) # FALSE
+anyNA(soleus)  # TRUE
+
+# rownames (gene_id)
+assertthat::are_equal(rownames(gastroc), rownames(soleus)) # TRUE
+
+
+# COMPARE COMLUMNS:
+col_idx <- c(1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17,9,18)
+compare.df <- merge(gastroc[13:21], soleus[13:21], by = 0, suffixes = c(".ga", ".so")) %>% 
+  tibble::column_to_rownames("Row.names") %>% 
+  .[,col_idx]
+
+
+# `gene_name`
+assertthat::are_equal(gastroc$gene_name, soleus$gene_name) # FALSE
+
+# `gene_start`
+assertthat::are_equal(compare.df$gene_start.ga, compare.df$gene_start.so) # FALSE
+# filter(compare.df, gene_start.ga != gene_start.so) %>% View() # 504 entries
+
+# `gene_end`
+assertthat::are_equal(compare.df$gene_end.ga, compare.df$gene_end.so) # FALSE
+# filter(compare.df, gene_end.ga != gene_end.so) %>% View() # 506 entries
+
+# `gene_chr`
+assertthat::are_equal(compare.df$gene_chr.ga, compare.df$gene_chr.so) # FALSE
+# filter(compare.df, gene_chr.ga != gene_chr.so) %>% View() # 58 entries (in `so` no `chr` available)
+
+# `gene_strand`
+assertthat::are_equal(compare.df$gene_strand.ga, compare.df$gene_strand.so) # FALSE
+# filter(compare.df, gene_strand.ga != gene_strand.so) %>% View() # 33 entries (all inverse, where 32 are "+" in ga)
+
+# `gene_biotype`
+assertthat::are_equal(compare.df$gene_biotype.ga, compare.df$gene_biotype.so) # FALSE
+# filter(compare.df, gene_biotype.ga != gene_biotype.so) %>% View() # 155 entries
+
+# `gene_description`
+assertthat::are_equal(compare.df$gene_description.ga, compare.df$gene_description.so) # FALSE
+# filter(compare.df, gene_description.ga == gene_description.so) %>% View() # 58 entries have no description at all, gastroc has no description at all
+
+# `tf_family`
+assertthat::are_equal(compare.df$tf_family.ga, compare.df$tf_family.so) # FALSE
+# filter(compare.df, tf_family.ga != tf_family.so) %>% View() # 11096 entries, 
+
+rm(compare.df)
+```
+
+Genes for both tissues have the same ensembl id, and have in general the same annotations.
+But each annotation (column) has entries which are inconsistent!
+
+Thus maybe only the gene_ids will be used in following analysis. (TODO?)
+
 
 ## Treemap
 
@@ -401,6 +461,11 @@ plt
 # cleaning up
 
 ## SE
+
+! important: here the rowdata of the gastroc is used as the rowdata of the soleus.
+TODO: this should be changed I believe, maybe just use here the ensembl ids and annotate them here new, so that the annotations are the same for both tissues?
+Or is it actually intended, that the annotations differ?
+
 ```{r SummarizedExperiment}
 # ordering data.frames by rowname (ENSMUSG ID)
 gastroc <- gastroc[order(rownames(gastroc)),]
