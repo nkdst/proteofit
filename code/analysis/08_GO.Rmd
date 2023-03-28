@@ -49,6 +49,14 @@ if (! exists("knitting_parameters_used")) {
 } 
 ```
 
+
+# GO analysis
+
+This is an alternative approach to using the `fgsea` method (see "04_fgsea.Rmd")
+which is better suited to compare it with other findings of Imke Lemmer.
+
+
+
 ```{r plotSettings, include=FALSE}
 condition_pal <- c("WT"= "#00C3C6","KO"= "#FF6C67")
 
@@ -58,102 +66,196 @@ tissue_pal <- c(gastroc = "orange", soleus="purple")
 ```
 
 
-```{r loadDESeqResult}
-# library(SummarizedExperiment)
 
+```{r loadDESeqResult}
+# loading DESeq2 results (`res.gastroc`, and `res.soleus`):
 load("./data/Robjects/03_DDS.RData")
 
-# se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
-# se.soleus <- readRDS("./data/Robjects/01_se.soleus.rds")
-
+# loading annotation data for entrez ids (GRCm39):
+load("./data/Robjects/02_annot.RData")
 ```
 
+used genome: Biomart Database (GRCm39)
 
 # clusterProfiler: enrichGO
-```{r}
-entrez_ids <- res.gastroc %>%
-  data.frame() %>% 
-  filter(padj < params$pCutoff)
-enrichGO()
 
-```
-
-
-
-```{r reading_pathways, include=FALSE}
-# canonical pathways (1687 gene sets):
-CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt")
-```
-
-
-## ranks
-
-```{r getting_ranks}
-getRanks <- function(res, annot) {
-  # only taking genes which have entrezgene_ids assigned to them
-  genes_with_entrez <- select(annot, GeneID, entrezgene_id) %>% 
-    filter(!is.na(entrezgene_id))
-  
-  ranks <- as.data.frame(res) %>%
-    tibble::rownames_to_column("GeneID") %>%
-    merge(genes_with_entrez, by = "GeneID") %>%
-    arrange(desc(stat)) %>% 
-    select(entrezgene_id, stat) %>% 
-    tibble::deframe() # creating a named num from two columns
-  return(ranks)
-}
-
-ranks.gastroc <- getRanks(res.gastroc, annot)
-ranks.soleus <- getRanks(res.soleus, annot)
-# TODO: why (again) is the soleus gene count seemingly 300 below soleus gene count / ranks count
-# -> seems because of e.g. the cutoff at DESeq
-```
-
-## applying fgsea
-
-    fgseaRes <- fgsea(
-      pathways = CGP,
-      stats    = ranks,
-      minSize  = 15,
-      maxSize  = `r params$fgsea.maxSize`
-    )
-
-```{r fgsea_res_load, include=FALSE}
-# ' returns the fgsea result
-# ' `tissue` needs to be one of {"soleus", "soleus"}
-# ' Also saves the results locally to avoid too much queries
-get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
-  robjects.path <- file.path(".", "data", "Robjects")
-  fgseaRes.path <- file.path(
-    robjects.path,
-    "04_fgsea_results",
-    tissue,
-    paste0("maxSize_", params$fgsea.maxSize, ".rds")
+```{r goFunction}
+performGO_dotplot <- function(entrez_ids, plot_name, pCutoff = params$pCutoff) {
+  result_GO <- enrichGO(
+    entrez_ids,
+    OrgDb =  "org.Mm.eg.db",
+    ont = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff = pCutoff,
+    readable = T
   )
-  fgseaRes.dir <- dirname(fgseaRes.path)
   
-  if (file.exists(fgseaRes.path) & !params$reevaluate) {
-    message("fgsea result found in directory! Previous version will be loaded ...")
-    return(readRDS(file = fgseaRes.path))
-  } else {
-    # perform fgsea and save the result
-    fgseaRes <- fgsea(
-      pathways = pathways,
-      stats    = ranks,
-      minSize  = 15,
-      maxSize  = maxSize
+  # plot:
+  p <- dotplot(result_GO, showCategory = 15) +
+    scale_color_gradient(
+      low = "red",
+      high = "blue",
+      labels = function(x)
+        format(x, digits = 2)
     )
-    
-    if (saveResults) {
-      if (!dir.exists(fgseaRes.dir))
-        dir.create(fgseaRes.dir, recursive = T)
-      saveRDS(fgseaRes, file = fgseaRes.path)
-    }
-    return(fgseaRes)
-  }
+  ggsave(
+    filename = file.path(
+      path.currentPlots,
+      paste0("03_enrichGO_dotplot_", plot_name, ".svg")
+    ),
+    plot = p
+  )
+  return(p)
 }
-
-fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
-fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 ```
 
+## all gastroc
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_general")
+```
+
+
+
+## all soleus
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_general")
+```
+
+
+## gastroc - upregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat > 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_upregulated")
+```
+
+
+
+## gastroc - downregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat < 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_downregulated")
+```
+
+
+## soleus - upregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat > 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_upregulated")
+```
+
+
+
+## soleus - downregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat < 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_downregulated")
+```
+
+---
+# without baseMean filter:
+
+## all gastroc
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_general_noBmf")
+```
+
+
+
+## all soleus
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_general_noBmf")
+```
+
+
+## gastroc - upregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_upregulated_noBmf")
+```
+
+
+
+## gastroc - downregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_downregulated_noBmf")
+```
+
+
+## soleus - upregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_upregulated_noBmf")
+```
+
+
+
+## soleus - downregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_downregulated_noBmf")
+```
