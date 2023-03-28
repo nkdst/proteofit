@@ -446,7 +446,7 @@ plotCHM <- function(counts_sign) {
     show_row_names = FALSE,
     show_column_names = FALSE,
     column_title = "samples",
-    col = rev(morecols(50)),
+    col = morecols(50),
     column_title_side = "bottom",
     top_annotation = top_annot
   )
@@ -482,7 +482,7 @@ dev.off()
 
 ### pca: significant genes
 Here the z-scored count matrix is used to create the pca plot.
-Wether the counts are z-scored or not, does not change the plot, as long as the z-score is applied on the whole matrix (not per tissue)
+Whether the counts are z-scored or not, does not change the plot, as long as the z-score is applied on the whole matrix (not per tissue)
 
 ```{r pca.zscored, message=FALSE}
 pca <- prcomp(t(counts_sign_zscored), scale. = T)
