@@ -34,9 +34,8 @@ se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
 
 # setting up connection to DB
 
-## Select BioMart database and dataset
-
-```{r connect}
+```{r include=FALSE, eval=FALSE}
+## Exploring settings:
 # view the available databases
 listMarts()
 ## set up connection to ensembl database
@@ -48,22 +47,14 @@ listDatasets(ensembl) %>%
 ensembl = useDataset("mmusculus_gene_ensembl", mart=ensembl)
 ```
 
-## Query the database
-
-### explore filter types
-
-```{r queryBioMart, message=F}
+```{r queryBioMart, message=F, include=FALSE, eval=FALSE}
+### explore filter types:
 # check the available "filters" - things you can filter for
 listFilters(ensembl) %>% 
     filter(str_detect(name, "ensembl"))
 # check the available "attributes" - things you can retrieve
 listAttributes(ensembl) %>% head(40)
 ```
-
-
-
-
-*  multiple Entrez IDs for a single Ensembl 
 
 
 ## Retrieve full annotation
@@ -73,6 +64,8 @@ listAttributes(ensembl) %>% head(40)
 
 ```{r}
 # 
+ensembl.mart <- useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl", host = 'https://www.ensembl.org')
+
 filterValues <- rownames(se.gastroc)
 filterType <- "ensembl_gene_id"
 attributeNames <- c('ensembl_gene_id',
@@ -88,10 +81,13 @@ attributeNames <- c('ensembl_gene_id',
 annot <- getBM(attributes=attributeNames,
                filters = filterType,
                values = filterValues,
-               mart = ensembl) %>%
+               mart = ensembl.mart) %>%
   dplyr::rename(GeneID=ensembl_gene_id)
+
+
 ```
 
+# exploring the annotation dataset:
 
 duplicate ids:
 ```{r}
