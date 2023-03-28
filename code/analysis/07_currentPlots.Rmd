@@ -27,6 +27,8 @@ params:
     label: Should all calculations and database lookups be done again or just e.g.
       graphics regenerated
     value: no
+  condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
+  tissue_pal: !r c(gastroc = "orange", soleus="purple")
 ---
 
 ```{r setup, include=FALSE}
@@ -44,15 +46,6 @@ library(RColorBrewer)
 path.currentPlots <- file.path(".", "plots", "current")
 ```
 
-
-
-```{r plotSettings, include=FALSE}
-condition_pal <- c("WT"= "#00C3C6","KO"= "#FF6C67")
-
-# color palette for the tissues
-# tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
-tissue_pal <- c(gastroc = "orange", soleus="purple")
-```
 
 # 1. First Analysis
 
@@ -154,7 +147,7 @@ plt <-
     shape = 'condition',
     label.show.legend = FALSE
   ) +
-  scale_color_manual(values = tissue_pal) +
+  scale_color_manual(values = params$tissue_pal) +
   ggtitle("PCA top 1000 most variable genes of each tissue (sd)")+
   theme_bw()
 ggsave(filename = file.path(path.currentPlots, "01_pca_both_tissues_filtered.svg"), plt)
@@ -358,7 +351,7 @@ sign_gene_stats <- list(
 ```{r vennDiagram}
 col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
-venn.colors <- c(tissue_pal, scales::hue_pal()(4))
+venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 # only the two tissues
 gene_sets <- c(
@@ -382,7 +375,7 @@ p
 library(eulerr)
 p <- plot(
   eulerr::venn(gene_sets),
-  fills = tissue_pal,
+  fills = params$tissue_pal,
   main = "significant genes"
 )
 ggsave(filename = file.path(path.currentPlots, "02_venn.svg"), p)
@@ -434,7 +427,7 @@ plotCHM <- function(counts_sign) {
     HeatmapAnnotation(
       tissue = tissue_vec,
       condition = condition_vec,
-      col = list(tissue = tissue_pal, condition = c("WT" = "white", "KO" = "gray")),
+      col = list(tissue = params$tissue_pal, condition = c("WT" = "white", "KO" = "gray")),
       gp = gpar(col = "darkgray"),
       show_legend = FALSE
     )
@@ -460,7 +453,7 @@ plotCHM <- function(counts_sign) {
   )
   tissue_legend = Legend(
     labels = c("gastroc", "soleus"),
-    legend_gp = gpar(fill = unname(tissue_pal)),
+    legend_gp = gpar(fill = unname(params$tissue_pal)),
     border = "darkgray",
     title = "tissue"
   )
@@ -502,7 +495,7 @@ autoplot(
   label.show.legend = FALSE
 ) +
   ggtitle("PCA significantly differentially expressed genes") +
-  scale_color_manual(values = unname(tissue_pal)) +
+  scale_color_manual(values = unname(params$tissue_pal)) +
   theme_bw()
 ggsave(filename = file.path(path.currentPlots, "02_pca_dea_sign.svg"), p)
 p
@@ -659,7 +652,7 @@ p
 ```{r vennDiagramGSEA}
 col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
-venn.colors <- c(tissue_pal, scales::hue_pal()(4))
+venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 sign_geneSets_gastroc <-
   data.frame(fgseaRes.gastroc[, c("pathway", "padj")]) %>%
@@ -694,7 +687,7 @@ p
 library(eulerr)
 p <- plot(
   eulerr::venn(gene_sets),
-  fills = tissue_pal,
+  fills = params$tissue_pal,
   main = "significant gene sets (GSEA)"
 )
 ggsave(filename = file.path(path.currentPlots, "03_venn.svg"), p)

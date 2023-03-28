@@ -19,9 +19,8 @@ params:
   pCutoff:
     label: "cutoff for the adjusted p-Value"
     value: 0.01
-  knitting_parameters_used:
-    label: "helper variable for knitting, should not be changed"
-    value: TRUE
+  condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
+  tissue_pal: !r c(gastroc = "orange", soleus="purple")
 ---
 
 ```{r setup, include=FALSE}
@@ -29,31 +28,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(dplyr)
 library(ggplot2)
+library(ggfortify) # autoplot (PCA)
 library(DESeq2)
 # TODO: maybe just remove SE altogehter again?! seems to just bloat everything
 library(SummarizedExperiment)
 library(EnhancedVolcano)
 library(eulerr)
-```
-
-
-```{r parameters, include=FALSE}
-if (! exists("knitting_parameters_used")) {
-  # when knitting with parameters the following variables are already set
-  FCutoff <- 1
-  pCutoff <- 0.01
-} else {
-  FCutoff <- params$FCutoff
-  pCutoff <- params$pCutoff
-} 
-```
-
-
-```{r plotSettings, include=FALSE}
-condition_pal <- c("WT"= "#00C3C6","KO"= "#FF6C67")
-# color palette for the tissues
-# tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
-tissue_pal <- c(gastroc = "orange", soleus="purple")
 ```
 
 
@@ -102,8 +82,8 @@ dds.soleus <- createDDSObject(counts.soleus, metadata)
 # Results
 
 ```{r results}
-res.gastroc <- results(dds.gastroc, alpha = pCutoff, contrast = c("genotype", "KO", "WT"))
-res.soleus <- results(dds.soleus, alpha = pCutoff, contrast = c("genotype", "KO", "WT"))
+res.gastroc <- results(dds.gastroc, alpha = params$pCutoff, contrast = c("genotype", "KO", "WT"))
+res.soleus <- results(dds.soleus, alpha = params$pCutoff, contrast = c("genotype", "KO", "WT"))
 ```
 
 ## MA-Plots
@@ -218,16 +198,16 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = charac
 }
 
 
-volcanoPlot(res.gastroc, se.gastroc, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "gastrocnemius")
+volcanoPlot(res.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
 
-volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "soleus")
+volcanoPlot(res.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
 
 ```
 
 ## scatter-plot: most differential genes, both tissues
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
-`FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
+`FCutoff=``r params$FCutoff` and `pCutoff=``r params$pCutoff` yields the following plot:
 ```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   res.filtered <- deseq.result %>%
@@ -239,8 +219,10 @@ apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   return(res.filtered)
 }
 
-gastroc_res.filtered <- apply_cutoffs(res.gastroc, colname="gastroc", FCutoff, pCutoff)
-soleus_res.filtered  <- apply_cutoffs(res.soleus,  colname="soleus",  FCutoff, pCutoff)
+gastroc_res.filtered <-
+  apply_cutoffs(res.gastroc, colname = "gastroc", params$FCutoff, params$pCutoff)
+soleus_res.filtered  <-
+  apply_cutoffs(res.soleus,  colname = "soleus",  params$FCutoff, params$pCutoff)
 
 gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
   dplyr::select(gene_name)
