@@ -13,9 +13,13 @@ path.reports <- file.path(".", "reports")
 ## document parameters ----
 pCutoff <- 0.01
 FCutoff <- 1
-condition_pal <- c("WT" = "#00C3C6", "KO" = "#FF6C67")
-tissue_pal <- c(gastroc = "orange", soleus = "purple")
+
+# colors:
+condition_pal <- c("WT" = "turquoise3", "KO" = "indianred1")
+tissue_pal <- c("gastroc" = "orange", "soleus" = "purple")
 # tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
+regulated_pal <- list(upgregulated = 'royalblue', downregulated = 'red', insignificant = 'gray')
+heatmap_pal <- brewer.pal(11, "RdYlBu")
 
 # parameter vector containing all general parameters:
 all_parameters <-
@@ -23,12 +27,13 @@ all_parameters <-
     pCutoff = pCutoff,
     FCutoff = FCutoff,
     tissue_pal = tissue_pal,
-    condition_pal = condition_pal
+    condition_pal = condition_pal,
+    regulated_pal = regulated_pal,
+    heatmap_pal = heatmap_pal
   )
 
 
 # render functions ----
-
 
 # ' this function looks at the yaml of the target file and extracts then only those
 # ' given parameters which are needed for this document.
@@ -65,7 +70,9 @@ customMarkdownRendering <- function(filename,
 }
 
 
-# Documents ----
+# Documents --------------------------------------------------------------------
+# TODO: implement all currentPlots into earlier documents!
+# TODO: make workflow diagram!
 
 ## 03 DESeq ----
 customMarkdownRendering(filename = "03_DESeq")

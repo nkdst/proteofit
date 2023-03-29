@@ -10,6 +10,10 @@ output:
     df_print: paged
 editor_options: 
   chunk_output_type: inline
+params:
+  condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
+  tissue_pal: !r c(gastroc = "orange", soleus="purple")
+  heatmap_pal: !r brewer.pal(11, "RdYlBu")
 ---
 
 ```{r setup, include=FALSE}
@@ -48,7 +52,7 @@ counts.gastroc <- gastroc[, 1:12]
 # TODO: fix annotations: several entries are incomplete whereas the gastroc seems to be complete
 soleus <-
   readr::read_tsv("./data/counts/readcount_genename_soleus.xls",
-                  show_col_types = F) %>% 
+                  show_col_types = F) %>%
   arrange(gene_id) %>% 
   tibble::column_to_rownames(var = "gene_id")
 counts.soleus <- soleus[, 1:12]
@@ -244,6 +248,7 @@ plotBoxLog <- function(logcounts, metadata) {
   stack(logcounts) %>%
     merge(metadata, by.x = "ind", by.y = "sample_name") %>% 
     ggplot( aes(x=ind, y=values, color=genotype)) +
+    scale_color_manual(values = params$condition_pal) +
     geom_boxplot() + 
     ylab("Log2(Counts)") +
     xlab(element_blank()) +
@@ -342,10 +347,8 @@ I could try to just apply `log2` to all counts and then create a heatmap.
 
 # ' returning a CHM with the z-scored counts
 plotCHM <- function(counts) {
-  # Get some nicer colours
-  mypalette <- brewer.pal(11, "RdYlBu")
   # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
-  morecols <- colorRampPalette(mypalette)
+  morecols <- colorRampPalette(params$heatmap_pal)
   
   chm <- Heatmap(
     zscore(counts),

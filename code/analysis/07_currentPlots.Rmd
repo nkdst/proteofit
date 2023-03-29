@@ -29,6 +29,8 @@ params:
     value: no
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
+  regulated_pal: !r list("upgregulated" = 'royalblue', "downregulated" = 'red', "insignificant" = 'gray')
+  heatmap_pal: !r brewer.pal(11, "RdYlBu")
 ---
 
 ```{r setup, include=FALSE}
@@ -207,18 +209,18 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
   keyvals <- ifelse(
     result$log2FoldChange < -FCutoff &
       result$padj < pCutoff,
-    'royalblue',
+    params$regulated_pal$upgregulated,
     ifelse(
       result$log2FoldChange > FCutoff &
         result$padj < pCutoff,
-      'red',
-      'gray'
+      params$regulated_pal$downregulated,
+      params$regulated_pal$insignificant
     )
   )
-  keyvals[is.na(keyvals)] <- 'gray'
-  names(keyvals)[keyvals == 'red'] <- 'up regulated'
-  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
-  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
+  keyvals[is.na(keyvals)] <- params$regulated_pal$insignificant
+  names(keyvals)[keyvals == params$regulated_pal$upregulated] <- 'up regulated'
+  names(keyvals)[keyvals == params$regulated_pal$insignificant] <- 'nonsignificant'
+  names(keyvals)[keyvals == params$regulated_pal$downregulated] <- 'down regulated'
   
   vlc.plt <- EnhancedVolcano(
     result,
@@ -417,9 +419,8 @@ counts_sign_zscored <- merge(
 
 
 plotCHM <- function(counts_sign) {
-  mypalette <- brewer.pal(11, "RdYlBu")
-  # (reverse to map style of other heatmap in manuscript)
-  morecols <- colorRampPalette(rev(mypalette))
+  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
+  morecols <- colorRampPalette(params$heatmap_pal)
   
   tissue_vec <- c(rep("gastroc", 12), rep("soleus", 12))
   condition_vec <- c(rep(c(rep("WT", 6), rep("KO", 6)),2))
