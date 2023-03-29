@@ -1,0 +1,384 @@
+---
+title: "06_Proteomics"
+author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
+output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    df_print: paged
+  html_document:
+    toc: yes
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+params:
+  FCutoff:
+    label: cutoff for the log2FoldChange
+    value: 0
+  pCutoff:
+    label: "cutoff for the adjusted p-Value"
+    value: 0.05
+  condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
+  tissue_pal: !r c(gastroc = "orange", soleus="purple")
+  heatmap_pal: !r brewer.pal(11, "RdYlBu")
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readxl)
+library(ggplot2)
+library(limma) # needed?
+library(EnhancedVolcano)
+```
+
+
+
+```{r loadProteomics}
+prot.full <- readxl::read_xlsx("./data/other omics/Proteome_all hits and first 500 hits.xlsx")
+prot.top500 <- readxl::read_xlsx("./data/other omics/Proteome_all hits and first 500 hits.xlsx", sheet = "first 500 hits") %>% 
+  dplyr::rename("-log_pval" = "...2")
+prot <- data.frame(prot.full[,1:6])
+
+```
+
+
+# Goal
+Validate previous results of the DGSEA with the proteomics data.
+To look at the differential genes `t-test` or `ANOVA` can be used.
+
+* [ ] how many genes are overlapping?
+
+# examine proteomics data
+
+## difference
+
+calculate the mean difference between KO and WT (reconstruct previous analysis)
+
+* [ ] remove this since, other metric (t-statistics) is more accurate
+
+```{r examiningTop500}
+prot500 <- prot.top500 %>% 
+  select("WT_1","WT_2","WT_3","KO_1","KO_2","KO_3", "Difference") %>% 
+  rowwise() %>%
+  mutate(diff = sum(KO_1, KO_2, KO_3)/3 - sum(WT_1, WT_2, WT_3)/3) %>% 
+  ungroup()
+
+```
+
+## Sanity checks
+
+```{r  sanityChecks, include=FALSE}
+no_zero_counts <- sum(prot > 0) == ncol(prot) * nrow(prot)
+assertthat::assert_that(no_zero_counts, msg = "There are zero counts in the data")
+
+assertthat::assert_that(!anyNA(prot), msg = "There are NAs in the data")
+```
+
+
+* [x] no `NA`s
+* [x] no zero counts
+
+
+## PCA
+
+All samples and proteins used (`r ncol(prot)`) => no filtering was applied before
+in this analysis.
+
+Goal: identify possible batch-effects
+
+
+
+```{r pcaPlot}
+pca <- prcomp(t(prot))
+
+pca.data <- data.frame(Sample = rownames(pca$x),
+                       X = pca$x[, 1],
+                       Y = pca$x[, 2]) %>%
+  mutate(type = substr(Sample, 1,2))
+
+plt <-
+  autoplot(
+    pca,
+    data = pca.data,
+    colour = 'type',
+    label.show.legend = FALSE
+  ) +
+  ggtitle("PCA proteomics")
+# ggsave(filename = "./plots/04_pca_gastroc_filtered.png", plt, dpi=300)
+plt
+```
+
+Is there an outlier in the WT samples? WT and KO are still good separable.
+
+
+# TODO
+
+* [ ] t-test <-
+* [ ] ANOVA
+
+
+
+
+# t-test
+
+## normalization and fitting
+Before performing a "t-test" or similar analysis, the data needs to be normalized.
+Since it is not known whether a normalization of the data has not already been carried out, the first sample "WT_1" is examined:
+```{r checkIfNormalized}
+par(mfrow = c(1, 2))
+hist(prot$WT_1, breaks = 50, main = "WT_1")
+hist(normalizeQuantiles(prot)$WT_1, breaks = 50, main="norm(WT_1)")
+```
+The first histogram seems to show that the data is already normally distributed.
+
+---
+
+However, the use of `normalizeQuantiles` seems to improve this, so this method will be used going forward.
+
+To calculate the p-values, the `t.test()` is applied and the `Benjamini Hochberg` method
+is used to adjust them:
+
+```{r normalizeProteomics}
+prot_normalized <- prot %>% 
+  normalizeQuantiles()
+
+calc_p_value <- function(row) {
+  x <- row[1:3]
+  y <- row[4:6]
+  
+  p <- t.test(x, y)$p.value
+  return(p)
+}
+```
+
+## p-values
+
+```{r ttest}
+prot$p_values <- apply(prot_normalized, 1, calc_p_value)
+prot$padj <- p.adjust(prot$p_values, method = "BH")
+
+par(mfrow = c(1, 2))
+hist(prot$p_values, breaks = 50, main ="p-values", xlab = NA)
+hist(prot$padj, breaks = 50, main = "adjusted", xlab = NA)
+
+```
+
+
+## fold change
+```{r}
+# calculate foldChange (without log)
+prot.fc <- prot %>%
+  rowwise() %>%
+  mutate(
+    mean_WT        = mean(c(WT_1, WT_2, WT_3)),
+    mean_KO        = mean(c(KO_1, KO_2, KO_3)),
+    foldChange     = mean_KO / mean_WT
+  ) %>%
+  ungroup() %>%
+  mutate(genes = prot.full$`T: PG.Genes`)
+```
+
+
+## t-statistics
+```{r}
+prot.t <- prot %>%
+  rowwise() %>%
+  mutate(
+    mean_WT        = mean(c(WT_1, WT_2, WT_3)),
+    mean_KO        = mean(c(KO_1, KO_2, KO_3)),
+    sd_WT          = sd(c(WT_1, WT_2, WT_3)),
+    sd_KO          = sd(c(KO_1, KO_2, KO_3)),
+    t_statistic    = (mean_KO - mean_WT) / sqrt(sd_WT ^ 2 / 3 + sd_KO ^ 2 / 3)
+  ) %>%
+  ungroup() %>%
+  mutate(genes = prot.full$`T: PG.Genes`)
+prot.t <- lapply(wt_cols, function(x) wilcox.test(df[, x], df[, x + 3]))
+
+# Extract the t-statistics from the t-test results
+t_statistics <- sapply(results, function(x) x$statistic)
+```
+
+
+
+```{r limmaANOVA, eval=FALSE, include=FALSE}
+# create a design matrix specifying the experimental design
+design <- matrix(c(1,1,1,0,0,0,0,0,0,1,1,1), nrow = 6)
+colnames(design) <- c("WT", "KO")
+
+# fit a linear model to the data
+model <- lmFit(prot_normalized, design = design)
+model <- eBayes(model)
+
+volcanoplot(model)
+
+# perform an ANOVA test to test for significant differences in gene expression
+anova_results <- anova(model)
+
+# view the ANOVA results
+head(anova_results)
+```
+
+
+
+### top (100) significant diff. genes
+
+```{r topDiffGenes.df}
+topProteins <- prot.log %>%
+  top_n(100, wt = -padj) %>%
+  arrange(padj)
+
+kableExtra::kbl(topProteins) %>%
+  kableExtra::kable_paper() %>%
+  kableExtra::scroll_box(height = "500px", fixed_thead = T)
+```
+
+### Volcano Plot
+```{r volcanoPlot, warning=FALSE, fig.width=4, fig.height=4}
+# " ```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}"
+volcanoPlot <- function(result.df, pCutoff = 0.05, FCutoff = 0) {
+  result.df <- result.df %>%
+    dplyr::arrange(padj)
+  
+  # top 10 gene labels for respectively up and down regulation
+  labs.up <- result.df[result.df$log2FoldChange > FCutoff,]$genes %>%
+    .[1:10]
+  labs.down <- result.df[result.df$log2FoldChange < -FCutoff, ]$genes %>%
+    .[1:10]
+  selectLab <- c(labs.up, labs.down)
+  
+  # custom colors:
+  keyvals <- ifelse(
+    result.df$log2FoldChange < -FCutoff &
+      result.df$padj < pCutoff,
+    'royalblue',
+    ifelse(
+      result.df$log2FoldChange > FCutoff &
+        result.df$padj < pCutoff,
+      'red',
+      'gray'
+    )
+  )
+  keyvals[is.na(keyvals)] <- 'gray'
+  names(keyvals)[keyvals == 'red'] <- 'up regulated'
+  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
+  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
+  
+  vlc.plt <- EnhancedVolcano(
+    result.df,
+    x = 'log2FoldChange',
+    y = 'padj',
+    # title = '',
+    caption = "",
+    ylab = expression(paste(-Log[10], p[adj])),
+    pCutoff = pCutoff,
+    FCcutoff = FCutoff,
+    legendPosition = 'right',
+    pointSize = 2,
+    colCustom = keyvals,
+    lab = result.df$genes,
+    selectLab = selectLab,
+    labSize = 3,
+    boxedLabels = TRUE,
+    drawConnectors = TRUE,
+    max.overlaps = Inf
+  )
+  
+  return(vlc.plt)
+}
+
+
+volcanoPlot(prot.log, pCutoff = params$pCutoff, FCutoff = params$FCutoff)
+
+```
+
+### top differential expressed genes
+
+```{r topDiffGenes}
+boxplot.top <- function(result.df, upregulated=TRUE, n = 20, FCutoff = 0) {
+  # filter for up or down regulated proteins
+  .filter <- ifelse(upregulated, `>`, `<`)
+  result.df <- subset(result.df, .filter(foldChange, FCutoff))
+  
+  # preparing top 20 (by `padj`) gene sets for ggplot function
+  counts.plt <- result.df %>% 
+    dplyr::arrange(padj) %>% 
+    .[1:n,] %>% 
+    tidyr::pivot_longer(
+      cols = WT_1:KO_3,
+      names_to = "genotype",
+      values_to = "counts",
+      names_pattern = "^(..)" # first two characters of the column name ("WT", or "KO")
+    ) %>% 
+    mutate(genotype = factor(genotype)) %>%
+    mutate(genotype = relevel(genotype, "WT")) %>% # "WT" needs to be displayed before "KO"
+    mutate(genes = forcats::fct_reorder(genes, counts, .desc = T))
+  
+  
+  direction <- ifelse(upregulated, "up", "down")
+  
+  ggplot(counts.plt,
+         aes(
+           x = as.factor(genes),
+           y = counts,
+           fill = genotype
+         )) +
+    geom_dotplot(
+      binaxis = 'y',
+      stackdir = 'center',
+      dotsize = 0.3,
+      position = position_dodge(0.8),
+      fill = "black"
+    ) +
+    geom_boxplot(outlier.size = 0.3) +
+    scale_y_log10() +
+    xlab("Genes") +
+    ylab("counts") +
+    scale_fill_manual(values = params$condition_pal) +
+    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes")) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+    ))
+}
+```
+
+
+```{r topDiffBox, warning=FALSE, message=FALSE, dpi=100}
+boxplot.top(prot.fc, upregulated = T)
+boxplot.top(prot.fc, upregulated = F)
+```
+
+
+# save R ojects
+
+```{r saving_R_objects}
+save(prot.log, file = "./data/Robjects/06_Proteomics.RData")
+```
+
+# Questions
+
+
+general - about the data:
+
+- what metric are the values of the proteomics? Do you call them counts as well?
+  - -> adjust names in this script!
+- what tissue samples were used to produce the proteomics data?
+  - was it produced using the combination of soleus and gastrocnemius tissues?
+- it seems the gene "Nfe2l1" is not contained in this dataset (nor are his synonyms: NRF1, NFE2-related factor)
+  - is there another synonym or protein group which is related?
+
+
+analysis
+
+- is the data already normalized?
+- is the normalization step needed?
+- the negative Log(p_values) are different to the pre-calculated ones in the excel file
+- why are the top500 in the Excel file only considering positive Differences?
+- is my log2FoldChange correctly implemented?
+  - should I use this or the exact "Difference" for the 
