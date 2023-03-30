@@ -22,7 +22,8 @@ params:
     value: 0.05
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
-  heatmap_pal: !r brewer.pal(11, "RdYlBu")
+  heatmap_pal: !r RColorBrewer::brewer.pal(11, "RdYlBu")
+  regulated_pal: !r list("upregulated" = 'royalblue', "downregulated" = 'red', "insignificant" = 'gray')
 ---
 
 ```{r setup, include=FALSE}
@@ -31,6 +32,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(readxl)
 library(ggplot2)
+library(ggfortify) # for `autoplot`
 library(limma) # needed?
 library(EnhancedVolcano)
 ```
@@ -112,13 +114,13 @@ plt <-
 plt
 ```
 
-Is there an outlier in the WT samples? WT and KO are still good separable.
+There is an outlier in the WT samples? WT and KO are still good separable.
 
 
 # TODO
 
-* [ ] t-test <-
-* [ ] ANOVA
+- [ ] t-test <-
+- [ ] ANOVA
 
 
 
@@ -142,28 +144,28 @@ However, the use of `normalizeQuantiles` seems to improve this, so this method w
 To calculate the p-values, the `t.test()` is applied and the `Benjamini Hochberg` method
 is used to adjust them:
 
-```{r normalizeProteomics}
-prot_normalized <- prot %>% 
-  normalizeQuantiles()
-
-calc_p_value <- function(row) {
-  x <- row[1:3]
-  y <- row[4:6]
-  
-  p <- t.test(x, y)$p.value
-  return(p)
-}
-```
-
 ## p-values
 
 ```{r ttest}
-prot$p_values <- apply(prot_normalized, 1, calc_p_value)
-prot$padj <- p.adjust(prot$p_values, method = "BH")
+# normalize
+prot_normalized <- prot %>% 
+  limma::normalizeQuantiles()
+
+t_stat_results <- apply(prot_normalized, 1, function(row) {
+  result <- t.test(row[1:3], row[4:6])
+  # c(statistic = result$statistic, p_value = result$p.value)
+  c(statistic = result$statistic, p_value = result$p.value)
+})
+
+# Add t-statistics and p-values as new columns to the original data frame
+prot_normalized <- cbind(prot_normalized, t(t_stat_results))
+
+# adjust p-values
+prot_normalized$padj <- p.adjust(prot_normalized$p_value, method = "BH")
 
 par(mfrow = c(1, 2))
-hist(prot$p_values, breaks = 50, main ="p-values", xlab = NA)
-hist(prot$padj, breaks = 50, main = "adjusted", xlab = NA)
+hist(prot_normalized$p_value, breaks = 50, main ="p-values", xlab = NA)
+hist(prot_normalized$padj, breaks = 50, main = "adjusted", xlab = NA)
 
 ```
 
@@ -171,74 +173,21 @@ hist(prot$padj, breaks = 50, main = "adjusted", xlab = NA)
 ## fold change
 ```{r}
 # calculate foldChange (without log)
-prot.fc <- prot %>%
+prot_normalized <- prot_normalized %>%
   rowwise() %>%
   mutate(
     mean_WT        = mean(c(WT_1, WT_2, WT_3)),
     mean_KO        = mean(c(KO_1, KO_2, KO_3)),
-    foldChange     = mean_KO / mean_WT
+    log2FoldChange     = log2(mean_KO / mean_WT)
   ) %>%
   ungroup() %>%
   mutate(genes = prot.full$`T: PG.Genes`)
 ```
 
 
-## t-statistics
-```{r}
-prot.t <- prot %>%
-  rowwise() %>%
-  mutate(
-    mean_WT        = mean(c(WT_1, WT_2, WT_3)),
-    mean_KO        = mean(c(KO_1, KO_2, KO_3)),
-    sd_WT          = sd(c(WT_1, WT_2, WT_3)),
-    sd_KO          = sd(c(KO_1, KO_2, KO_3)),
-    t_statistic    = (mean_KO - mean_WT) / sqrt(sd_WT ^ 2 / 3 + sd_KO ^ 2 / 3)
-  ) %>%
-  ungroup() %>%
-  mutate(genes = prot.full$`T: PG.Genes`)
-prot.t <- lapply(wt_cols, function(x) wilcox.test(df[, x], df[, x + 3]))
-
-# Extract the t-statistics from the t-test results
-t_statistics <- sapply(results, function(x) x$statistic)
-```
-
-
-
-```{r limmaANOVA, eval=FALSE, include=FALSE}
-# create a design matrix specifying the experimental design
-design <- matrix(c(1,1,1,0,0,0,0,0,0,1,1,1), nrow = 6)
-colnames(design) <- c("WT", "KO")
-
-# fit a linear model to the data
-model <- lmFit(prot_normalized, design = design)
-model <- eBayes(model)
-
-volcanoplot(model)
-
-# perform an ANOVA test to test for significant differences in gene expression
-anova_results <- anova(model)
-
-# view the ANOVA results
-head(anova_results)
-```
-
-
-
-### top (100) significant diff. genes
-
-```{r topDiffGenes.df}
-topProteins <- prot.log %>%
-  top_n(100, wt = -padj) %>%
-  arrange(padj)
-
-kableExtra::kbl(topProteins) %>%
-  kableExtra::kable_paper() %>%
-  kableExtra::scroll_box(height = "500px", fixed_thead = T)
-```
-
-### Volcano Plot
-```{r volcanoPlot, warning=FALSE, fig.width=4, fig.height=4}
-# " ```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}"
+## Volcano Plot
+```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+#"```{r volcanoPlot, warning=FALSE, fig.width=4, fig.height=4}"
 volcanoPlot <- function(result.df, pCutoff = 0.05, FCutoff = 0) {
   result.df <- result.df %>%
     dplyr::arrange(padj)
@@ -254,18 +203,20 @@ volcanoPlot <- function(result.df, pCutoff = 0.05, FCutoff = 0) {
   keyvals <- ifelse(
     result.df$log2FoldChange < -FCutoff &
       result.df$padj < pCutoff,
-    'royalblue',
+    params$regulated_pal$upregulated,
     ifelse(
       result.df$log2FoldChange > FCutoff &
         result.df$padj < pCutoff,
-      'red',
-      'gray'
+      params$regulated_pal$downregulated,
+      params$regulated_pal$insignificant
     )
   )
-  keyvals[is.na(keyvals)] <- 'gray'
-  names(keyvals)[keyvals == 'red'] <- 'up regulated'
-  names(keyvals)[keyvals == 'gray'] <- 'nonsignificant'
-  names(keyvals)[keyvals == 'royalblue'] <- 'down regulated'
+
+  
+  keyvals[is.na(keyvals)] <- params$regulated_pal$insignificant
+  names(keyvals)[keyvals == params$regulated_pal$upregulated] <- 'up regulated'
+  names(keyvals)[keyvals == params$regulated_pal$insignificant] <- 'nonsignificant'
+  names(keyvals)[keyvals == params$regulated_pal$downregulated] <- 'down regulated'
   
   vlc.plt <- EnhancedVolcano(
     result.df,
@@ -284,16 +235,22 @@ volcanoPlot <- function(result.df, pCutoff = 0.05, FCutoff = 0) {
     labSize = 3,
     boxedLabels = TRUE,
     drawConnectors = TRUE,
-    max.overlaps = Inf
+    max.overlaps = Inf,
+    xlim = c(min(result.df[["log2FoldChange"]], na.rm = TRUE) - 0.5, max(result.df[["log2FoldChange"]], na.rm = TRUE) +
+    0.5),
+    ylim = c(0, max(-log10(result.df[["padj"]]), na.rm = TRUE) + 2),
   )
   
   return(vlc.plt)
 }
 
 
-volcanoPlot(prot.log, pCutoff = params$pCutoff, FCutoff = params$FCutoff)
+volcanoPlot(prot_normalized, pCutoff = params$pCutoff, FCutoff = params$FCutoff)
 
 ```
+
+- [ ] add labels for top fold change (over padj threshold)
+
 
 ### top differential expressed genes
 
@@ -301,7 +258,7 @@ volcanoPlot(prot.log, pCutoff = params$pCutoff, FCutoff = params$FCutoff)
 boxplot.top <- function(result.df, upregulated=TRUE, n = 20, FCutoff = 0) {
   # filter for up or down regulated proteins
   .filter <- ifelse(upregulated, `>`, `<`)
-  result.df <- subset(result.df, .filter(foldChange, FCutoff))
+  result.df <- subset(result.df, .filter(log2FoldChange, FCutoff))
   
   # preparing top 20 (by `padj`) gene sets for ggplot function
   counts.plt <- result.df %>% 
@@ -336,7 +293,7 @@ boxplot.top <- function(result.df, upregulated=TRUE, n = 20, FCutoff = 0) {
     geom_boxplot(outlier.size = 0.3) +
     scale_y_log10() +
     xlab("Genes") +
-    ylab("counts") +
+    ylab("expression level") +
     scale_fill_manual(values = params$condition_pal) +
     ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes")) +
     theme_bw() +
@@ -350,15 +307,37 @@ boxplot.top <- function(result.df, upregulated=TRUE, n = 20, FCutoff = 0) {
 
 
 ```{r topDiffBox, warning=FALSE, message=FALSE, dpi=100}
-boxplot.top(prot.fc, upregulated = T)
-boxplot.top(prot.fc, upregulated = F)
+boxplot.top(prot_normalized, upregulated = T)
+boxplot.top(prot_normalized, upregulated = F)
+```
+
+
+
+# ANOVA (experimental)
+
+```{r limmaANOVA, eval=FALSE, include=FALSE}
+# create a design matrix specifying the experimental design
+design <- matrix(c(1,1,1,0,0,0,0,0,0,1,1,1), nrow = 6)
+colnames(design) <- c("WT", "KO")
+
+# fit a linear model to the data
+model <- lmFit(prot_normalized, design = design)
+model <- eBayes(model)
+
+volcanoplot(model)
+
+# perform an ANOVA test to test for significant differences in gene expression
+anova_results <- anova(model)
+
+# view the ANOVA results
+head(anova_results)
 ```
 
 
 # save R ojects
 
 ```{r saving_R_objects}
-save(prot.log, file = "./data/Robjects/06_Proteomics.RData")
+save(prot_normalized, file = "./data/Robjects/06_Proteomics.RData")
 ```
 
 # Questions
