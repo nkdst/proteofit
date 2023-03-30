@@ -13,7 +13,7 @@ editor_options:
 params:
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
-  heatmap_pal: !r brewer.pal(11, "RdYlBu")
+  heatmap_pal: !r RColorBrewer::brewer.pal(11, "RdYlBu")
 ---
 
 ```{r setup, include=FALSE}

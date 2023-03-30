@@ -18,8 +18,8 @@ FCutoff <- 1
 condition_pal <- c("WT" = "turquoise3", "KO" = "indianred1")
 tissue_pal <- c("gastroc" = "orange", "soleus" = "purple")
 # tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
-regulated_pal <- list(upgregulated = 'royalblue', downregulated = 'red', insignificant = 'gray')
-heatmap_pal <- brewer.pal(11, "RdYlBu")
+regulated_pal <- list(upregulated = 'royalblue', downregulated = 'red', insignificant = 'gray')
+heatmap_pal <- RColorBrewer::brewer.pal(11, "RdYlBu")
 
 # parameter vector containing all general parameters:
 all_parameters <-
@@ -92,7 +92,7 @@ customMarkdownRendering(filename = "05_fgseaRes_pathways",
 
 
 ## 06 Proteomics ----
-customMarkdownRendering(filename = "06.1_Proteomics")
+customMarkdownRendering(filename = "06_Proteomics")
 
 
 ## 07 currentPlots ----

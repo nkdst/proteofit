@@ -21,6 +21,8 @@ params:
     label: Should all calculations and database lookups be done again or just e.g.
       graphics regenerated
     value: no
+  condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
+  tissue_pal: !r c(gastroc = "orange", soleus="purple")
 ---
 
 ```{r setup, include=FALSE}
@@ -34,14 +36,10 @@ library(plotly, include.only = "ggplotly")
 ```
 
 ```{r load_rdata, include=FALSE}
-
 perform_fgsea <- params$reevaluate
 
 load("./data/Robjects/02_annot.RData") # for entrezgene_id
 load("./data/Robjects/03_DDS.RData")   # for `stat` values from DESeq results
-
-# color palette for the tissues
-tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
 ```
 
 # creating ranks
@@ -291,7 +289,7 @@ ggplot(df_long, aes(x = reorder(pathway, -NES), y = NES, fill = tissue)) +
   geom_bar(stat = "identity", position = "dodge") +
   theme_classic() +
   xlab("Pathway") + ylab("NES") +
-  scale_fill_manual(values = tissue_pal) +
+  scale_fill_manual(values = params$tissue_pal) +
   geom_text(aes(label = sprintf("%.2e", `p adj.`)), position = position_dodge(width = 0.9), vjust = +0.3, hjust = -1) +
   coord_flip()
 
@@ -329,7 +327,7 @@ ggplot(df_long, aes(
   geom_bar(stat = "identity", position = "dodge") +
   theme_classic() +
   xlab("Pathway") + ylab("NES") +
-  scale_fill_manual(values = tissue_pal) +
+  scale_fill_manual(values = params$tissue_pal) +
   geom_text(
     aes(label = sprintf("%.2e", `p adj.`)),
     position = position_dodge(width = 0.9),
@@ -357,7 +355,7 @@ ggplot(df_long, aes(x = pathway, y = value, fill = tissue)) +
   geom_bar(stat = "identity", position = "dodge") +
   theme_classic() +
   xlab("Pathway") + ylab("NES") +
-  scale_fill_manual(values = tissue_pal) +
+  scale_fill_manual(values = params$tissue_pal) +
   coord_flip()
 ```
 
@@ -389,7 +387,7 @@ bar_plot <- ggplot(df_long, aes(x = pathway, y = NES, fill = tissue)) +
   ylab("NES") +
   theme_classic() +
   theme(panel.grid = element_blank()) + 
-  scale_fill_manual(values = tissue_pal) +
+  scale_fill_manual(values = params$tissue_pal) +
   coord_flip()
 
 # create the right panel with the p-values

@@ -29,8 +29,8 @@ params:
     value: no
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
-  regulated_pal: !r list("upgregulated" = 'royalblue', "downregulated" = 'red', "insignificant" = 'gray')
-  heatmap_pal: !r brewer.pal(11, "RdYlBu")
+  regulated_pal: !r list("upregulated" = 'royalblue', "downregulated" = 'red', "insignificant" = 'gray')
+  heatmap_pal: !r RColorBrewer::brewer.pal(11, "RdYlBu")
 ---
 
 ```{r setup, include=FALSE}
@@ -209,7 +209,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
   keyvals <- ifelse(
     result$log2FoldChange < -FCutoff &
       result$padj < pCutoff,
-    params$regulated_pal$upgregulated,
+    params$regulated_pal$upregulated,
     ifelse(
       result$log2FoldChange > FCutoff &
         result$padj < pCutoff,
