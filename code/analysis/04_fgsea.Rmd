@@ -304,7 +304,7 @@ p <- plot(
   fills = venn.colors,
   main = "significant gene sets (GSEA)"
 )
-ggsave(filename = file.path("plots", "03_euler.svg"), p)
+ggsave(filename = file.path("plots", "04_euler.svg"), p)
 p
 
 # 2nd option: venn two tissues
@@ -314,7 +314,7 @@ p <- plot(
   fills = params$tissue_pal,
   main = "significant gene sets (GSEA)"
 )
-ggsave(filename = file.path("plots", "03_venn.svg"), p)
+ggsave(filename = file.path("plots", "04_venn.svg"), p)
 p
 ```
 
@@ -447,7 +447,7 @@ gets adjusted by the function well. The .svg file looks okay
 group = "both down"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
 
- ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, ".svg")), p_combined)
+ ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
 p_combined
 ```
 
@@ -459,7 +459,7 @@ gets adjusted by the function well. The .svg file looks okay
 group = "only gastrocnemius"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100)
 
-ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
 p_combined
 ```
 
@@ -472,7 +472,7 @@ gastroc.df <-
   arrange(NES)
 
 p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length = 100)
-ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, "_single.svg")), p.gastroc)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.gastroc)
 p.gastroc
 ```
 
@@ -485,7 +485,7 @@ gets adjusted by the function well. The .svg file looks okay
 group = "only soleus"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100, sort_by_gastroc = F)
 
-ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
 p_combined
 ```
 
@@ -500,7 +500,7 @@ soleus.df <-
 
 p.soleus <-
   fgsea_dotplot(soleus.df, max_label_length = 100)
-ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, "_single.svg")), p.soleus)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.soleus)
 p.soleus
 ```
 
@@ -509,7 +509,7 @@ p.soleus
 for (group in unique(fgseaRes.combined$diff.exp)) {
   p_combined <- combined_dotplot(group, fgseaRes.combined)
   
-  ggsave(filename = file.path("plots", paste0("03_gsea_dotplot_", group, ".svg")), p_combined)
+  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
   print(p_combined)
 }
 ```
