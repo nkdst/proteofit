@@ -17,9 +17,6 @@ params:
   pCutoff:
     label: "cutoff for the adjusted p-Value"
     value: 0.01
-  knitting_parameters_used:
-    label: "helper variable for knitting, should not be changed"
-    value: TRUE
   fgsea.maxSize:
     label: "parameter for `fgsea`: 'Maximal size of a gene set to test. All pathways above the threshold are excluded.'"
     value: 200
@@ -178,14 +175,6 @@ load("./data/Robjects/03_DDS.RData")
 se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
 se.soleus <- readRDS("./data/Robjects/01_se.soleus.rds")
 
-if (! exists("knitting_parameters_used")) {
-  # when knitting with parameters the following variables are already set
-  FCutoff <- 1
-  pCutoff <- 0.01
-} else {
-  FCutoff <- params$FCutoff
-  pCutoff <- params$pCutoff
-} 
 ```
 
 
@@ -217,6 +206,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
       params$regulated_pal$insignificant
     )
   )
+
   keyvals[is.na(keyvals)] <- params$regulated_pal$insignificant
   names(keyvals)[keyvals == params$regulated_pal$upregulated] <- 'up regulated'
   names(keyvals)[keyvals == params$regulated_pal$insignificant] <- 'nonsignificant'
@@ -231,7 +221,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
     caption = "",
     ylab = expression(paste(-Log[10], p[adj])),
     pCutoff = pCutoff,
-    FCcutoff = FCutoff,
+    FCutoff = FCutoff,
     legendPosition = 'right',
     pointSize = 2,
     colCustom = keyvals,
@@ -247,10 +237,10 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
 }
 
 
-p <- volcanoPlot(res.gastroc, se.gastroc, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "gastrocnemius")
+p <- volcanoPlot(res.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
 ggsave(filename = file.path(path.currentPlots, "02_volcano_gastroc.svg"), p)
 p
-p <- volcanoPlot(res.soleus, se.soleus, pCutoff = pCutoff, FCutoff = FCutoff, tissue = "soleus")
+p <- volcanoPlot(res.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
 ggsave(filename = file.path(path.currentPlots, "02_volcano_soleus.svg"), p)
 p
 ```
@@ -258,7 +248,7 @@ p
 ## scatter-plot: most differential genes, both tissues
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
-`FCutoff=``r FCutoff` and `pCutoff=``r pCutoff` yields the following plot:
+`FCutoff=``r params$FCutoff` and `pCutoff=``r params$pCutoff` yields the following plot:
 ```{r scatterDEA, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   res.filtered <- deseq.result %>%
@@ -270,8 +260,8 @@ apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   return(res.filtered)
 }
 
-gastroc_res.filtered <- apply_cutoffs(res.gastroc, colname="gastroc", FCutoff, pCutoff)
-soleus_res.filtered  <- apply_cutoffs(res.soleus,  colname="soleus",  FCutoff, pCutoff)
+gastroc_res.filtered <- apply_cutoffs(res.gastroc, colname="gastroc", params$FCutoff, params$pCutoff)
+soleus_res.filtered  <- apply_cutoffs(res.soleus,  colname="soleus",  params$FCutoff, params$pCutoff)
 
 gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
   dplyr::select(gene_name)
@@ -428,7 +418,7 @@ plotCHM <- function(counts_sign) {
     HeatmapAnnotation(
       tissue = tissue_vec,
       condition = condition_vec,
-      col = list(tissue = params$tissue_pal, condition = c("WT" = "white", "KO" = "gray")),
+      col = list(tissue = params$tissue_pal, condition = params$condition_pal),
       gp = gpar(col = "darkgray"),
       show_legend = FALSE
     )
@@ -657,13 +647,13 @@ venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 sign_geneSets_gastroc <-
   data.frame(fgseaRes.gastroc[, c("pathway", "padj")]) %>%
-  filter(padj < pCutoff) %>% 
+  filter(padj < params$pCutoff) %>% 
   pull(pathway)
 
 
 sign_geneSets_soleus <-
   data.frame(fgseaRes.soleus[, c("pathway", "padj")]) %>%
-  filter(padj < pCutoff) %>% 
+  filter(padj < params$pCutoff) %>% 
   pull(pathway)
 
 # only the two tissues

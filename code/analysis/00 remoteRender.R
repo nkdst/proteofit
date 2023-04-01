@@ -17,7 +17,6 @@ FCutoff <- 1
 # colors:
 condition_pal <- c("WT" = "turquoise3", "KO" = "indianred1")
 tissue_pal <- c("gastroc" = "orange", "soleus" = "purple")
-# tissue_pal <- c(gastroc = "#FFB08E", soleus="#FF6638")
 regulated_pal <- list(upregulated = 'royalblue', downregulated = 'red', insignificant = 'gray')
 heatmap_pal <- RColorBrewer::brewer.pal(11, "RdYlBu")
 
@@ -72,6 +71,7 @@ customMarkdownRendering <- function(filename,
 
 # Documents --------------------------------------------------------------------
 # TODO: implement all currentPlots into earlier documents!
+# - [x] finished 03
 # TODO: make workflow diagram!
 
 ## 03 DESeq ----

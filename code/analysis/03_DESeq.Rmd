@@ -144,7 +144,7 @@ hist(res.soleus$pvalue, main = "soleus")
 
 ## Volcano Plot
 ```{r volcanoPlot, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
-volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = character()) {
+volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = character()) {
   gene_names <-
     rowData(se)[rownames(result), c("gene_name"), drop = F]
   results.df <- result %>%
@@ -170,6 +170,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = charac
       params$regulated_pal$insignificant
     )
   )
+
   keyvals[is.na(keyvals)] <- params$regulated_pal$insignificant
   names(keyvals)[keyvals == params$regulated_pal$upregulated] <- 'up regulated'
   names(keyvals)[keyvals == params$regulated_pal$insignificant] <- 'nonsignificant'
@@ -184,7 +185,7 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = charac
     caption = "",
     ylab = expression(paste(-Log[10], p[adj])),
     pCutoff = pCutoff,
-    FCcutoff = FCutoff,
+    FCutoff = FCutoff,
     legendPosition = 'right',
     pointSize = 2,
     colCustom = keyvals,
@@ -200,17 +201,19 @@ volcanoPlot <- function(result, se, pCutoff = 0.05, FCutoff = 1, tissue = charac
 }
 
 
-volcanoPlot(res.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
-
-volcanoPlot(res.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
-
+p <- volcanoPlot(res.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
+ggsave(filename = file.path(path.currentPlots, "02_volcano_gastroc.svg"), p)
+p
+p <- volcanoPlot(res.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
+ggsave(filename = file.path(path.currentPlots, "02_volcano_soleus.svg"), p)
+p
 ```
 
 ## scatter-plot: most differential genes, both tissues
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
 `FCutoff=``r params$FCutoff` and `pCutoff=``r params$pCutoff` yields the following plot:
-```{r topDiff.both, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+```{r scatterDEA, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   res.filtered <- deseq.result %>%
     data.frame() %>%
@@ -221,10 +224,8 @@ apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   return(res.filtered)
 }
 
-gastroc_res.filtered <-
-  apply_cutoffs(res.gastroc, colname = "gastroc", params$FCutoff, params$pCutoff)
-soleus_res.filtered  <-
-  apply_cutoffs(res.soleus,  colname = "soleus",  params$FCutoff, params$pCutoff)
+gastroc_res.filtered <- apply_cutoffs(res.gastroc, colname="gastroc", params$FCutoff, params$pCutoff)
+soleus_res.filtered  <- apply_cutoffs(res.soleus,  colname="soleus",  params$FCutoff, params$pCutoff)
 
 gene_names <- rowData(se.gastroc) %>% as.data.frame() %>% 
   dplyr::select(gene_name)
@@ -236,8 +237,8 @@ res.combined <- merge(gastroc_res.filtered,
   mutate(diff.exp = case_when(
     gastroc < 0 & soleus < 0 ~ "both down",
     gastroc > 0 & soleus > 0 ~ "both up",
-    gastroc < 0 & soleus > 0 ~ "ga down, sol up",
-    gastroc > 0 & soleus < 0 ~ "ga up, sol down",
+    gastroc < 0 & soleus > 0 ~ "gastrocnemius down,\n soleus up",
+    gastroc > 0 & soleus < 0 ~ "gastrocnemus up,\n soleus down",
     TRUE ~ "different"
   )) %>% 
   merge(gene_names, by.x="Row.names", by.y=0)
@@ -255,15 +256,35 @@ res.combined <- res.combined %>%
   mutate(gene_name = ifelse(gene_name %in% top_labels, gene_name, ""))
 
 # final plot
-ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
+p <- ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
   geom_vline(xintercept = 0) + 
   geom_hline(yintercept = 0) + 
   geom_point(aes(color = diff.exp)) +
   # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
-  labs(x = "gastroc", y = "soleus") +
-  ggrepel::geom_label_repel(max.overlaps = 20) + 
-  ggtitle(label = "stat (Wald test)") +
+  labs(x = "gastroc", y = "soleus", color = "significantly\ndifferentially\nexpressed") +
+  ggrepel::geom_label_repel(max.overlaps = 15) + 
+  ggtitle(label = "DEA: t-statistics (Wald test)") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 13),
+    axis.text = element_text(size = 13),
+    title = element_text(size = 13),
+    legend.text = element_text(size = 10)
+  )
+
+ggsave(filename = file.path(path.currentPlots, "02_dea_scatter.svg"), p)
+p
+```
+
+
+### barplot
+
+```{r dea_scatter_barplot}
+p <- ggplot(res.combined, aes(x = diff.exp)) +
+  geom_bar(aes(fill = diff.exp)) +
   theme_bw()
+ggsave(filename = file.path(path.currentPlots, "02_dea_scatter_barplot.svg"), p)
+p
 ```
 
 ```{r include=FALSE}
@@ -278,14 +299,6 @@ sign_gene_stats <- list(
   "ga up, sol down" = sum(res.combined$diff.exp == "ga up, sol down"),
   "ga down, sol up" = sum(res.combined$diff.exp == "ga down, sol up")
 )
-```
-
-
-## barplot
-
-```{r diffGenesBarPlot}
-ggplot(res.combined, aes(x = diff.exp)) +
-  geom_bar(aes(fill = diff.exp))
 ```
 
 
@@ -517,7 +530,7 @@ constellation is obtained.
 
 significant overview with all genes:
 ```{r}
-venn.colors <- c(genes = "white", tissue_pal)
+venn.colors <- c(genes = "white", params$tissue_pal)
 
 gene_sets <- c(
   "all genes" = sign_gene_stats$`all genes` - sign_gene_stats$shared_sig_genes,
@@ -545,7 +558,7 @@ significant grouped:
 ```{r vennDiagram}
 col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
 # venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
-venn.colors <- c(tissue_pal, scales::hue_pal()(4))
+venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 # sets for the venn/euler diagram (exclusive counts)
 gene_sets <- c(
@@ -589,12 +602,11 @@ p <- plot(
 ggsave("./plots/03_euler.svg", p)
 p
 
-
-# 3rd option: venn two tissues
+# 2nd option: venn two tissues
 library(eulerr)
 p <- plot(
   eulerr::venn(gene_sets),
-  fills = tissue_pal,
+  fills = params$tissue_pal,
   main = "significant genes"
 )
 ggsave("./plots/03_venn.svg", p)
@@ -625,19 +637,19 @@ sign_genes <-
                sign_genes %in% rownames(counts.soleus)]
 
 counts_sign_zscored <- merge(
-  zscore(counts.gastroc[sign_genes,]),
-  zscore(counts.soleus[sign_genes,]),
+  counts.gastroc[sign_genes,],
+  counts.soleus[sign_genes,],
   by = 0,
-  suffixes = c(".ga", ".sol")
+  suffixes = c(".gastroc", ".soleus")
 ) %>% 
   tibble::column_to_rownames(var="Row.names") %>%
-  as.matrix()
+  as.matrix() %>% 
+  zscore()
 
 
 plotCHM <- function(counts_sign) {
-  mypalette <- brewer.pal(11, "RdYlBu")
-  # (reverse to map style of other heatmap in manuscript)
-  morecols <- colorRampPalette(rev(mypalette))
+  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
+  morecols <- colorRampPalette(params$heatmap_pal)
   
   tissue_vec <- c(rep("gastroc", 12), rep("soleus", 12))
   condition_vec <- c(rep(c(rep("WT", 6), rep("KO", 6)),2))
@@ -645,19 +657,19 @@ plotCHM <- function(counts_sign) {
     HeatmapAnnotation(
       tissue = tissue_vec,
       condition = condition_vec,
-      col = list(tissue = tissue_pal, condition = params$condition_pal),
+      col = list(tissue = params$tissue_pal, condition = params$condition_pal),
       gp = gpar(col = "darkgray"),
       show_legend = FALSE
     )
   
   chm <- Heatmap(
     counts_sign,
-    row_title = "genes",
+    row_title = "differentially expressed genes",
     name = "zscore",
     show_row_names = FALSE,
     show_column_names = FALSE,
     column_title = "samples",
-    col = rev(morecols(50)),
+    col = morecols(50),
     column_title_side = "bottom",
     top_annotation = top_annot
   )
@@ -687,29 +699,33 @@ dev.off()
 
 ![](../../plots/03_heatmap_sign_genes.svg)
 
-## pca (z-scored)
+### pca: significant genes
+Here the z-scored count matrix is used to create the pca plot.
+Whether the counts are z-scored or not, does not change the plot, as long as the z-score is applied on the whole matrix (not per tissue)
 
-```{r pca.both, message=FALSE}
+```{r pca.zscored, message=FALSE}
 pca <- prcomp(t(counts_sign_zscored), scale. = T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
                      X = pca$x[, 1],
                      Y = pca$x[, 2]) %>%
-mutate(type = substr(Sample, 1, 2),
+mutate(condition = substr(Sample, 1, 2),
        tissue = stringr::str_extract(Sample,"[:alpha:]+$"))
 
-plt <-
+p <-
 autoplot(
   pca,
   data = pca.data,
-  colour = 'type',
-  shape = 'tissue',
+  colour = 'tissue',
+  shape = 'condition',
   label.show.legend = FALSE
 ) +
-ggtitle("PCA z-scored sign. genes")+
-theme_bw()
-ggsave(filename = "./plots/03_pca_dea_sign_zscored.svg")
-plt
+  ggtitle("PCA significantly differentially expressed genes") +
+  scale_color_manual(values = unname(params$tissue_pal)) +
+  theme_bw()
+ggsave(filename = file.path(path.currentPlots, "02_pca_dea_sign.svg"), p)
+p
+```
 ```
 
 ## pca (counts)
