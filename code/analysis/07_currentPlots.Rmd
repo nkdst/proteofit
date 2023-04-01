@@ -341,8 +341,6 @@ sign_gene_stats <- list(
 ## Venn/Euler-Diagram
 
 ```{r vennDiagram}
-col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
-# venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
 venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 # only the two tissues
@@ -641,8 +639,6 @@ p
 ### Venn/Euler-Diagram
 
 ```{r vennDiagramGSEA}
-col_palette <- RColorBrewer::brewer.pal(8, "Dark2")
-# venn.colors <- c(gastroc = "#FFB08E", soleus = "#FF6638", col_palette[1:4])
 venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 sign_geneSets_gastroc <-
@@ -714,7 +710,7 @@ combined_dotplot <-
       gastroc.df <- gastroc.df %>% 
         .[match(soleus.df$pathway, pathway)]
     }
-    
+	
     padj_limits <-
       c(min(gastroc.df$padj, soleus.df$padj),
         max(gastroc.df$padj, soleus.df$padj))
@@ -724,7 +720,7 @@ combined_dotplot <-
         max(gastroc.df$NES, soleus.df$NES))
     
     p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length, padj_limits, NES_limits)
-    
+
     p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits)
     
     # adjust plots
@@ -791,10 +787,7 @@ fgsea_dotplot <-
   }
 ```
 
-!Note: Different to most other plots, the dotplots seem to be created best by
-running the chunks manually. This results in automatic axis scaling with more 
-entries, so that the labels do not overlap (which is curiously not the case if
-remotely knitting)!
+> Note: Different to most other plots, the dotplots seem to be created best by running the chunks manually. This results in automatic axis scaling with more entries, so that the labels do not overlap (which is curiously not the case if remotely knitting)!
 
 
 #### dotplot: "both upregulated"
@@ -841,8 +834,7 @@ gastroc.df <-
   filter(fgseaRes.gastroc, pathway %in% pathways) %>%
   arrange(NES)
 
-p.gastroc <-
-  fgsea_dotplot(gastroc.df, max_label_length = 100)
+p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length = 100)
 # ggsave(filename = file.path(path.currentPlots, paste0("03_gsea_dotplot_", group, "_single.svg")),
 #        p.gastroc)
 p.gastroc

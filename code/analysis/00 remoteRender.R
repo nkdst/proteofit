@@ -72,6 +72,7 @@ customMarkdownRendering <- function(filename,
 # Documents --------------------------------------------------------------------
 # TODO: implement all currentPlots into earlier documents!
 # - [x] finished 03
+# - [x] finished 04
 # TODO: make workflow diagram!
 
 ## 03 DESeq ----
@@ -82,7 +83,7 @@ customMarkdownRendering(filename = "03_DESeq")
 customMarkdownRendering(
   filename = "04_fgsea",
   filename.addition = "_maxSize200_",
-  params = c(parameters, reevaluate = F, fgsea.maxSize = 200)
+  parameters = c(all_parameters, reevaluate = F, fgsea.maxSize = 200)
 )
 
 
@@ -97,6 +98,12 @@ customMarkdownRendering(filename = "06_Proteomics")
 
 ## 07 currentPlots ----
 customMarkdownRendering(filename = "07_currentPlots")
+
+
+## 08 GO (instead of fgsea) ----
+customMarkdownRendering(filename = "08_GO")
+
+
 
 
 ## testing ----
