@@ -36,7 +36,6 @@ library(dplyr)
 library(ggplot2)
 library(ggfortify) # need for `autoplot()` (PCA)
 
-# library(circlize)
 library(RColorBrewer)
 # library(SummarizedExperiment)
 ```
