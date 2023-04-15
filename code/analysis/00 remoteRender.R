@@ -70,10 +70,11 @@ customMarkdownRendering <- function(filename,
 
 
 # Documents --------------------------------------------------------------------
-# TODO: implement all currentPlots into earlier documents!
-# - [x] finished 03
-# - [x] finished 04
 # TODO: make workflow diagram!
+
+
+## 01 First Analysis and  pre-processing ----
+customMarkdownRendering(filename = "01_FirstAnalysis")
 
 ## 03 DESeq ----
 customMarkdownRendering(filename = "03_DESeq")

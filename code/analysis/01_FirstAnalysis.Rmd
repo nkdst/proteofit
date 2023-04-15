@@ -8,6 +8,9 @@ output:
     toc: yes
     toc_float: yes
     df_print: paged
+  html_document:
+    toc: yes
+    df_print: paged
 editor_options: 
   chunk_output_type: inline
 params:
@@ -17,13 +20,16 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
-library(ggplot2)
-library(treemap)
+knitr::opts_chunk$set(echo = TRUE, results = "hold")
 library(DESeq2)
+library(dplyr)
+library(eulerr)
 library(ggfortify) # autoplot (PCA)
+library(ggplot2)
 library(ggpubr)
+library(RColorBrewer)
+library(treemap)
+
 
 # Heatmaps
 # ## Github & ComplexHeatmap ----
@@ -32,14 +38,19 @@ if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
   # BiocManager::install("ComplexHeatmap")
 }
 library(ComplexHeatmap)
-library(circlize)
-library(RColorBrewer)
 library(SummarizedExperiment)
+```
+
+
+```{r plottingSettings, include=FALSE}
+ggplot2::theme_set(theme_minimal())
 ```
 
 # Overview
 
 ## Preparing data
+
+### reading in
 
 ```{r}
 gastroc <-
@@ -59,7 +70,10 @@ counts.soleus <- soleus[, 1:12]
 
 ```
 
-```{r compareAnnotations}
+
+### comparing annotations between the files of the respective tissues
+
+```{r compareAnnotations, results = 'markup'}
 # soleus contains `NA` values, whereas gastroc does not:
 anyNA(gastroc) # FALSE
 anyNA(soleus)  # TRUE
@@ -115,21 +129,6 @@ But each annotation (column) has entries which are inconsistent!
 Thus maybe only the gene_ids will be used in following analysis. (TODO?)
 
 
-## Treemap
-
-Both counts have the same genes analysed.
-These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
-
-```{r gene_biotypes}
-gene_biotypes <- table(gastroc$gene_biotype) %>%
-  as.data.frame() %>%
-  arrange(desc(Freq))
-
-treemap::treemap(gene_biotypes,
-                 index = "Var1",
-                 vSize = "Freq",
-                 title = "Gene biotypes")
-```
 
 # Filtering
 
@@ -138,42 +137,42 @@ treemap::treemap(gene_biotypes,
 For a broad overview all genes with `rowSums() < 10` will be displayed. This is usually similar to omitting genes with zero counts of more than 30%
 
 ```{r overview}
-rs.gastroc <- rowSums(counts.gastroc) %>%
-  as.data.frame() %>%
-  dplyr::rename("rowSums" = ".")
-n.omit.gastroc <- sum(rs.gastroc < 10)
-title <- paste0("rowSums low expressed genes, gastroc \n",
-                n.omit.gastroc, " genes will be omitted (~",
-                floor(n.omit.gastroc / nrow(rs.gastroc) * 100), " %)")
+plotRowsums <- function(counts.df, tissueName, cutoff = 10) {
+  rs.df <- rowSums(counts.df) %>%
+    as.data.frame() %>%
+    dplyr::rename("rowSums" = ".")
+  n.omit <- sum(rs.df < cutoff)
+  title <- paste0("rowSums low expressed genes, ", tissueName, "\n",
+                  n.omit, " genes will be omitted (~",
+                  floor(n.omit / nrow(rs.df) * 100), " %)")
+  
+  p <- rs.df %>% 
+    ggplot(aes(x=log(rowSums + 1)))+
+    geom_density(color="black", fill="white")+
+    geom_vline(aes(xintercept=log(cutoff + 1), color="red"), linetype="dashed") +
+    annotate("text", x=log(10+1), y=0.5, label="rowSums=10", color="red") +
+    ggtitle(title) + 
+    theme(legend.position = "none", axis.title.y=element_blank())
+}
 
-p.gastroc <- filter(rs.gastroc, rowSums < 20) %>%
-  ggplot(., aes(x=rowSums))+
-  geom_histogram(color="black", fill="white")+
-  geom_vline(aes(xintercept=10, color="red"),
-             linetype="dashed") +
-  ggtitle(title) + 
-  theme(legend.position = "none")
+p.soleus <- plotRowsums(counts.soleus, tissueName = "soleus")
+p.gastroc <- plotRowsums(counts.gastroc, tissueName = "gastrocnemius")
 
-# ---
-rs.soleus <- rowSums(counts.soleus) %>%
-  as.data.frame() %>%
-  dplyr::rename("rowSums" = ".")
-n.omit.soleus <- sum(rs.soleus < 10)
-title <- paste0("rowSums low expressed genes, soleus \n",
-                n.omit.soleus, " genes will be omitted (~",
-                floor(n.omit.gastroc / nrow(rs.gastroc) * 100), " %)")
 
-p.soleus <- filter(rs.soleus, rowSums < 20) %>%
-  ggplot(., aes(x=rowSums))+
-  geom_histogram(color="black", fill="white")+
-  geom_vline(aes(xintercept=10, color="red"),
-             linetype="dashed") +
-  ggtitle(title)+ 
-  theme(legend.position = "none")
+removeTitle <- function(plt) {
+  plt + 
+    theme(plot.title = element_blank())
+}
 
+
+# save plots (without title)
+ggsave("./plots/01_rowSums_gastroc.svg", removeTitle(p.gastroc), width=16, height=8, units = "cm")
+ggsave("./plots/01_rowSums_soleus.svg", removeTitle(p.soleus), width=16, height=8, units = "cm")
+
+
+# show plots in document
 p.gastroc
 p.soleus
-
 ```
 
 ## omitting genes (actual filtering)
@@ -191,6 +190,77 @@ counts.gastroc <- omitZeroCounts(counts.gastroc)
 counts.soleus <- omitZeroCounts(counts.soleus)
 ```
 
+
+TODO: compare genes of gastroc and soleus. Should only genes be taken, where the threshold was met for both tissues? => Might change things down the pipeline
+
+## Venn (Euler) Diagram
+
+```{r vennFiltered}
+sets <- list(
+  "all" = rownames(gastroc),
+  "gastrocnemius" = rownames(counts.gastroc),
+  "soleus" = rownames(counts.soleus)
+)
+
+venn.colors <- c(genes = "white", params$tissue_pal)
+
+p <- plot(
+  eulerr::euler(sets),
+  fills = venn.colors,
+  quantities = T
+)
+ggsave("./plots/01_filtered_genes.svg", p)
+p
+```
+
+## Treemap
+
+Both counts have the same genes analysed.
+These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
+
+```{r gene_biotypes}
+# custom color palette to assign each biotype a unique color (for both treemaps)
+treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
+  colorRampPalette()
+
+gene_biotypes <- table(gastroc$gene_biotype, dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  mutate(
+    biotype = stringr::str_replace_all(biotype, "_", " "),
+    colors = treemap_pal(n())
+    ) %>% 
+  arrange(desc(Freq))
+
+treemap::treemap(gene_biotypes,
+                 type = "color",
+                 index = "biotype",
+                 vSize = "Freq",
+                 vColor = "colors",
+                 title = "Gene biotypes")
+```
+
+vs the biotypes of the remaining genes (after omitting the zero-count genes) which
+occur in both tissues.
+
+
+
+```{r gene_biotypes_filtered}
+gene_ids <- unique(c(rownames(counts.gastroc), rownames(counts.soleus)))
+gene_biotypes_filtered <- filter(gastroc, rownames(gastroc) %in% rownames(counts.gastroc)) %>% 
+  select(gene_biotype) %>% 
+  table(dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  arrange(desc(Freq)) %>% 
+  mutate(biotype = stringr::str_replace_all(biotype, "_", " ")) %>% 
+  merge(gene_biotypes[, c("biotype", "colors")], by = "biotype") # obtain the same colors
+
+treemap::treemap(gene_biotypes_filtered,
+                 type = "color",
+                 index = "biotype",
+                 vColor = "colors",
+                 vSize = "Freq",
+                 title = "Gene biotypes, filtered")
+```
 
 
 # Quality assessment
@@ -214,7 +284,7 @@ plot.library_size <- function(counts, title="") {
 }
 
 
-plt.libsize.gastroc <- plot.library_size(counts.gastroc, title = "gastroc") +
+plt.libsize.gastroc <- plot.library_size(counts.gastroc, title = "gastrocnemius") +
   ylim(0, 4e07)
 plt.libsize.soleus <- plot.library_size(counts.soleus, title = "soleus") +
   ylim(0, 4e07)
@@ -223,14 +293,14 @@ ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
                     ncol = 1, nrow = 2)
 ```
 
-not sure what to make of this, but its there.
+The 
 
 
 ### count distribution boxplots
 
 Preparing the sample by applying log2 and loading metadata files
 
-```{r counts.distr.prep, echo=FALSE, message=FALSE}
+```{r counts.distr.prep, message=FALSE}
 logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
 logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
 
@@ -257,7 +327,7 @@ plotBoxLog <- function(logcounts, metadata) {
 }
 
 p1 <- plotBoxLog(logcounts.gastroc, metadata.gastroc) + 
-  ggtitle("gastroc")
+  ggtitle("gastrocnemius")
 p2 <- plotBoxLog(logcounts.soleus, metadata.soleus) + 
   ggtitle("soleus") +
   theme(axis.ticks.y = element_blank(),
@@ -284,7 +354,7 @@ following analysis.
 p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
   as.data.frame() %>%
   plotBoxLog(metadata.gastroc) + 
-  ggtitle("gastroc") +
+  ggtitle("gastrocnemius") +
   ylab("rlog(counts)")
 
 p2 <- DESeq2::rlog(as.matrix(counts.soleus)) %>%
@@ -372,6 +442,23 @@ plotCHM(counts.gastroc.top)
 plotCHM(counts.soleus.top)
 ```
 
+### both tissues
+
+```{r fig.width=4, fig.height=4, message=FALSE, eval=FALSE}
+# TODO: !! only copied code from 07, needs to be adjusted!
+counts.both
+
+counts.both <- 
+  merge(counts.gastroc[most_variable_genes, ],
+        counts.soleus[most_variable_genes, ],
+        by = 0,
+        all = T,
+        suffixes = c("_gastroc", "_soleus")) %>%
+  tibble::column_to_rownames("Row.names") %>% 
+  na.omit()
+
+plotCHM(counts.soleus.top)
+```
 
 
 # PCA
@@ -389,6 +476,7 @@ pca.data <- data.frame(Sample = rownames(pca$x),
                        Y = pca$x[, 2]) %>%
   mutate(type = substr(Sample, 1,2))
 
+# TODO: adjust, so that corresponds general color scheme 
 plt <-
   autoplot(
     pca,
