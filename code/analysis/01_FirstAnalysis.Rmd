@@ -134,50 +134,38 @@ Thus maybe only the gene_ids will be used in following analysis. (TODO?)
 
 ## Overview
 
-For a broad overview all genes with `rowSums() < 10` will be displayed. This is usually similar to omitting genes with zero counts of more than 30%
+For a broad overview of the the gene expression distribution, each expression value (of the samples) will be summed up for each gene (combining all samples).
+Choosing a threshold of `10` can be one method to omit low expressed genes:
 
-```{r overview}
-plotRowsums <- function(counts.df, tissueName, cutoff = 10) {
-  rs.df <- rowSums(counts.df) %>%
-    as.data.frame() %>%
-    dplyr::rename("rowSums" = ".")
-  n.omit <- sum(rs.df < cutoff)
-  title <- paste0("rowSums low expressed genes, ", tissueName, "\n",
-                  n.omit, " genes will be omitted (~",
-                  floor(n.omit / nrow(rs.df) * 100), " %)")
-  
-  p <- rs.df %>% 
-    ggplot(aes(x=log(rowSums + 1)))+
-    geom_density(color="black", fill="white")+
-    geom_vline(aes(xintercept=log(cutoff + 1), color="red"), linetype="dashed") +
-    annotate("text", x=log(10+1), y=0.5, label="rowSums=10", color="red") +
-    ggtitle(title) + 
-    theme(legend.position = "none", axis.title.y=element_blank())
-}
+```{r densityRowsumsOverlayed}
 
-p.soleus <- plotRowsums(counts.soleus, tissueName = "soleus")
-p.gastroc <- plotRowsums(counts.gastroc, tissueName = "gastrocnemius")
+# pair rowsums with tissue for ggplot
+rs.df <- data.frame(rowSums = c(rowSums(counts.gastroc), rowSums(counts.soleus)),
+                    tissue = rep(c("gastrocnemius", "soleus"),
+                                 times = c(
+                                   nrow(counts.gastroc), nrow(counts.gastroc)
+                                 )))
+
+cutoff <- 10
+
+p <- ggplot(rs.df, aes(x=log(rowSums + 1), fill=tissue, color=tissue, linetype=tissue)) + 
+  geom_density(alpha=0.3) +
+  scale_fill_manual(values = unname(params$tissue_pal), aesthetics = c("fill", "color")) +
+  geom_vline(xintercept = log(cutoff +1), linetype = "solid", color="red", alpha=0.5) + 
+  annotate("text", x=log(cutoff+1), y = 0.5, label="rowSums=10", color="red") +
+  ylab("density")
 
 
-removeTitle <- function(plt) {
-  plt + 
-    theme(plot.title = element_blank())
-}
-
-
-# save plots (without title)
-ggsave("./plots/01_rowSums_gastroc.svg", removeTitle(p.gastroc), width=16, height=8, units = "cm")
-ggsave("./plots/01_rowSums_soleus.svg", removeTitle(p.soleus), width=16, height=8, units = "cm")
-
-
-# show plots in document
-p.gastroc
-p.soleus
+ggsave("./plots/01_rowsums_combined.svg", p)
+p
 ```
+
 
 ## omitting genes (actual filtering)
 
-omitting genes with zero counts in more than 30% of the samples
+We chose to omit genes using having zero counts in more than 30% of the samples.
+This is a similar approach than above, but cannot be visualized as nicely.
+
 
 ```{r omit_zero_counts, echo=FALSE}
 omitZeroCounts <- function(counts.raw, share=0.3) {
@@ -293,7 +281,6 @@ ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
                     ncol = 1, nrow = 2)
 ```
 
-The 
 
 
 ### count distribution boxplots
