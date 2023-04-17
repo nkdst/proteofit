@@ -43,7 +43,7 @@ library(SummarizedExperiment)
 
 
 ```{r plottingSettings, include=FALSE}
-ggplot2::theme_set(theme_minimal())
+ggplot2::theme_set(theme_bw())
 ```
 
 # Overview
@@ -156,7 +156,8 @@ p <- ggplot(rs.df, aes(x=log(rowSums + 1), fill=tissue, color=tissue, linetype=t
   ylab("density")
 
 
-ggsave("./plots/01_rowsums_combined.svg", p)
+ggsave("./plots/01_rowsums_combined.svg", p, width=16, height=8, units = "cm")
+ggsave("./plots/01_rowsums_combined.png", p, width=16, height=8, units = "cm")
 p
 ```
 
@@ -307,7 +308,7 @@ plotBoxLog <- function(logcounts, metadata) {
     ggplot( aes(x=ind, y=values, color=genotype)) +
     scale_color_manual(values = params$condition_pal) +
     geom_boxplot() + 
-    ylab("Log2(Counts)") +
+    ylab("Log2(Counts+1)") +
     xlab(element_blank()) +
     theme(axis.text.x=element_text(angle=45, vjust=.8, hjust=0.8)) +
     geom_hline(yintercept = median(as.matrix(logcounts)), col="blue" )
@@ -401,14 +402,13 @@ I could try to just apply `log2` to all counts and then create a heatmap.
 ### gastroc
 
 ```{r fig.width=4, fig.height=4, message=FALSE}
-
 # ' returning a CHM with the z-scored counts
-plotCHM <- function(counts) {
+plot_single_CHM <- function(counts) {
   # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
   morecols <- colorRampPalette(params$heatmap_pal)
   
   chm <- Heatmap(
-    zscore(counts),
+    as.matrix(zscore(counts)),
     row_title = "genes",
     name = "zscore",
     show_row_names = FALSE,
@@ -418,120 +418,142 @@ plotCHM <- function(counts) {
   )
   return(chm)
 }
+```
 
-plotCHM(counts.gastroc.top)
+
+```{r heatmapGastroc, fig.width=4, fig.height=4, message=FALSE}
+chm <- plot_single_CHM(counts.gastroc.top)
+chm
 ```
 
 
 ### soleus
 
-```{r fig.width=4, fig.height=4, message=FALSE}
-plotCHM(counts.soleus.top)
+```{r heatmapSoleus, fig.width=4, fig.height=4, message=FALSE}
+chm <- plot_single_CHM(counts.soleus.top)
+chm
 ```
+
 
 ### both tissues
 
-```{r fig.width=4, fig.height=4, message=FALSE, eval=FALSE}
-# TODO: !! only copied code from 07, needs to be adjusted!
-counts.both
+```{r countsBoth, fig.width=4, fig.height=4, message=FALSE, eval=FALSE}
+# take union of most variable genes from both tissues
+most_variable_genes <- c(rownames(counts.gastroc.top),
+                         rownames(counts.soleus.top)) %>%
+  unique() # 1383 genes
 
-counts.both <- 
+counts.both.top <- 
   merge(counts.gastroc[most_variable_genes, ],
         counts.soleus[most_variable_genes, ],
         by = 0,
         all = T,
-        suffixes = c("_gastroc", "_soleus")) %>%
-  tibble::column_to_rownames("Row.names") %>% 
-  na.omit()
+        suffixes = c("_gastrocnemius", "_soleus")) %>%
+  tibble::column_to_rownames("Row.names") %>% # 1418 genes (why is this higher?)
+  na.omit() # 1332 genes
+```
 
-plotCHM(counts.soleus.top)
+
+```{r combinedHeatmap}
+plot_combined_CHM <- function(counts.df, datatype="zscore") {
+  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
+  morecols <- colorRampPalette(params$heatmap_pal)
+  
+  # annotations:
+  tissue_vec <- c(rep("gastroc", 12), rep("soleus", 12))
+  condition_vec <- c(rep(c(rep("WT", 6), rep("KO", 6)),2))
+  
+  top_annot <-
+    HeatmapAnnotation(
+      tissue = tissue_vec,
+      condition = condition_vec,
+      col = list(tissue = params$tissue_pal, condition = params$condition_pal),
+      gp = gpar(col = "darkgray"),
+      show_legend = FALSE
+    )
+  
+  ## sample numbers
+  sample_nrs <- colnames(counts.df) %>% 
+    stringr::str_extract("(?<=_)\\d{1,2}(?=_)")
+  colnames(counts.df) = sample_nrs
+  
+  chm <- Heatmap(
+    as.matrix(counts.df),
+    row_title = "most variable genes",
+    name = datatype,
+    show_row_names = FALSE,
+    show_column_names = TRUE,
+    column_title = "samples",
+    col = morecols(50),
+    column_title_side = "bottom",
+    top_annotation = top_annot,
+    column_names_gp = gpar(col = rep(unname(params$tissue_pal), each=12))
+
+  )
+  
+  # creating custom annotation legend (to obtain the gray border)
+  condition_legend = Legend(
+    labels = c("WT", "KO"),
+    legend_gp = gpar(fill = params$condition_pal),
+    border = "darkgray",
+    title = "condition"
+  )
+  tissue_legend = Legend(
+    labels = c("gastrocnemius", "soleus"),
+    legend_gp = gpar(fill = params$tissue_pal),
+    border = "darkgray",
+    title = "tissue"
+  )
+  legend_list <- list(condition_legend, tissue_legend)
+  
+  draw(chm, annotation_legend_list = legend_list)
+}
+```
+
+```{r heatmapBoth}
+chm <- plot_combined_CHM(zscore(counts.both.top), datatype = "zscore")
+```
+
+
+```{r heatmapBothSVG, include=FALSE}
+svglite::svglite(
+  "plots/01_heatmap_mvg_both.svg",
+)
+chm
+dev.off()
 ```
 
 
 # PCA
 
-## gastroc
-
-the pca is performed on the z-scored data
-=> Thus not using the `scale.=T` argument?
-
-```{r pca.gastroc, message=FALSE}
-pca <- prcomp(t(counts.gastroc.top), .scale=T)
-
-pca.data <- data.frame(Sample = rownames(pca$x),
-                       X = pca$x[, 1],
-                       Y = pca$x[, 2]) %>%
-  mutate(type = substr(Sample, 1,2))
-
-# TODO: adjust, so that corresponds general color scheme 
-plt <-
-  autoplot(
-    pca,
-    data = pca.data,
-    colour = 'type',
-    label.show.legend = FALSE
-  ) +
-  ggtitle("PCA gastroc")+
-  theme_bw()
-ggsave(filename = "./plots/04_pca_gastroc_filtered.svg", plt)
-plt
-```
-
-## soleus
-
-```{r pca.soleus, message=FALSE}
-pca <- prcomp(t(counts.soleus.top), scale. = T)
-
-pca.data <- data.frame(Sample = rownames(pca$x),
-                       X = pca$x[, 1],
-                       Y = pca$x[, 2]) %>%
-  mutate(type = substr(Sample, 1,2))
-
-plt <-
-  autoplot(
-    pca,
-    data = pca.data,
-    colour = 'type',
-    shape = 17,
-    label.show.legend = FALSE
-  ) +
-  ggtitle("PCA soleus")+
-  theme_bw()
-ggsave(filename = "./plots/04_pca_soleus_filtered.svg", plt)
-plt
-```
-
-## both tissues
-Here also taking the top 1000 most variable genes of each tissue and merging them.
+The union of the top 1000 most variable genes of each tissue is used
 
 ```{r pca.both, message=FALSE}
-# combine both count tables
-counts.both <-
-  merge(counts.gastroc.top,
-        counts.soleus.top,
-        by = 0,
-        suffixes = c("_gastroc", "_soleus")) %>%
-  tibble::column_to_rownames("Row.names")
-
-pca <- prcomp(t(counts.both), scale. = T)
+pca <- prcomp(t(counts.both.top), scale. = T)
 
 pca.data <- data.frame(Sample = rownames(pca$x),
                        X = pca$x[, 1],
                        Y = pca$x[, 2]) %>%
-  mutate(type = substr(Sample, 1, 2),
-         tissue = stringr::str_extract(Sample,"[:alpha:]+$"))
+  mutate(condition = substr(Sample, 1, 2),
+         tissue = stringr::str_extract(Sample, "[:alpha:]+$"),
+         sample_nr = stringr::str_extract(Sample, "(?<=_)\\d{1,2}(?=_)"))
+
 
 plt <-
   autoplot(
     pca,
     data = pca.data,
-    colour = 'type',
-    shape = 'tissue',
-    label.show.legend = FALSE
+    colour = 'tissue',
+    shape = 'condition',
+    label.label = "sample_nr",
+    label = T,
+    label.show.legend = FALSE, # (avoiding overlapping labels in legend)
+    label.repel = T
   ) +
-  ggtitle("PCA both tissues")+
-  theme_bw()
-ggsave(filename = "./plots/04_pca_both_tissues_filtered.svg", plt)
+  scale_color_manual(values = unname(params$tissue_pal))
+
+
+ggsave(filename = "./plots/01_pca_mvg_both.svg", plt)
 plt
 ```
 
