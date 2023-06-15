@@ -30,19 +30,14 @@ library(ggpubr)
 library(RColorBrewer)
 library(treemap)
 
-
-# Heatmaps
-# ## Github & ComplexHeatmap ----
-if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
-  devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)
-  # BiocManager::install("ComplexHeatmap")
-}
-library(ComplexHeatmap)
 library(SummarizedExperiment)
 ```
 
 
 ```{r plottingSettings, include=FALSE}
+# for custom CHM and PCA plotting functions
+source(file.path("code", "visualization_functions.R"))
+
 ggplot2::theme_set(theme_bw())
 ```
 
@@ -126,146 +121,13 @@ rm(compare.df)
 Genes for both tissues have the same ensembl id, and have in general the same annotations.
 But each annotation (column) has entries which are inconsistent!
 
-Thus maybe only the gene_ids will be used in following analysis. (TODO?)
+The focus in the subsequent analysis will remain using the gene_ids while most annotations, except the occasional gene name for plotting will not be used.
 
-
-
-# Filtering
-
-## Overview
-
-For a broad overview of the the gene expression distribution, each expression value (of the samples) will be summed up for each gene (combining all samples).
-Choosing a threshold of `10` can be one method to omit low expressed genes:
-
-```{r densityRowsumsOverlayed}
-
-# pair rowsums with tissue for ggplot
-rs.df <- data.frame(rowSums = c(rowSums(counts.gastroc), rowSums(counts.soleus)),
-                    tissue = rep(c("gastrocnemius", "soleus"),
-                                 times = c(
-                                   nrow(counts.gastroc), nrow(counts.gastroc)
-                                 )))
-
-cutoff <- 10
-
-p <- ggplot(rs.df, aes(x=log(rowSums + 1), fill=tissue, color=tissue, linetype=tissue)) + 
-  geom_density(alpha=0.3) +
-  scale_fill_manual(values = unname(params$tissue_pal), aesthetics = c("fill", "color")) +
-  geom_vline(xintercept = log(cutoff +1), linetype = "solid", color="red", alpha=0.5) + 
-  annotate("text", x=log(cutoff+1), y = 0.5, label="rowSums=10", color="red") +
-  ylab("density")
-
-
-ggsave("./plots/01_rowsums_combined.svg", p, width=16, height=8, units = "cm")
-ggsave("./plots/01_rowsums_combined.png", p, width=16, height=8, units = "cm")
-p
-```
-
-```{r rowsums_cutoff_amount, results='hold', collapse=FALSE}
-filter(rs.df, rowSums > 10, tissue == "gastrocnemius") %>% nrow()
-filter(rs.df, rowSums > 10, tissue == "soleus") %>% nrow()
-```
-
-## omitting genes (actual filtering)
-
-We chose to omit genes having zero counts in more than 30% of the samples.
-This is a similar approach than above, but cannot be visualized as nicely.
-
-
-```{r omit_zero_counts}
-omitZeroCounts <- function(counts.raw, share=0.3) {
-  keep <- (counts.raw != 0) %>%
-    rowSums() > round(share * ncol(counts.raw))
-  return(counts.raw[keep,])
-}
-
-counts.gastroc <- omitZeroCounts(counts.gastroc)
-counts.soleus <- omitZeroCounts(counts.soleus)
-```
-
-
-TODO: compare genes of gastroc and soleus. Should only genes be taken, where the threshold was met for both tissues? => Might change things down the pipeline
-
-## Venn (Euler) Diagram
-
-```{r vennFiltered}
-sets <- list(
-  "all" = rownames(gastroc),
-  "gastrocnemius" = rownames(counts.gastroc),
-  "soleus" = rownames(counts.soleus)
-)
-
-venn.colors <- c(genes = "white", params$tissue_pal)
-
-p <- plot(
-  eulerr::euler(sets),
-  fills = venn.colors,
-  quantities = T
-)
-ggsave("./plots/01_filtered_genes.svg", p)
-p
-```
-
-## Treemap
-
-Both counts have the same genes analysed.
-These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
-
-```{r gene_biotypes}
-# custom color palette to assign each biotype a unique color (for both treemaps)
-treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
-  colorRampPalette()
-
-gene_biotypes <- table(gastroc$gene_biotype, dnn = c("biotype")) %>%
-  as.data.frame() %>%
-  mutate(
-    biotype = stringr::str_replace_all(biotype, "_", " "),
-    colors = treemap_pal(n())
-    ) %>% 
-  arrange(desc(Freq))
-
-treemap::treemap(gene_biotypes,
-                 type = "color",
-                 index = "biotype",
-                 vSize = "Freq",
-                 vColor = "colors",
-                 title = "Gene biotypes")
-```
-
-vs the biotypes of the remaining genes (after omitting the zero-count genes) which
-occur in both tissues.
-
-
-
-```{r gene_biotypes_filtered}
-gene_ids <- unique(c(rownames(counts.gastroc), rownames(counts.soleus)))
-gene_biotypes_filtered <- filter(gastroc, rownames(gastroc) %in% rownames(counts.gastroc)) %>% 
-  select(gene_biotype) %>% 
-  table(dnn = c("biotype")) %>%
-  as.data.frame() %>%
-  arrange(desc(Freq)) %>% 
-  mutate(biotype = stringr::str_replace_all(biotype, "_", " ")) %>% 
-  merge(gene_biotypes[, c("biotype", "colors")], by = "biotype") # obtain the same colors
-
-treemap::treemap(gene_biotypes_filtered,
-                 type = "color",
-                 index = "biotype",
-                 vColor = "colors",
-                 vSize = "Freq",
-                 title = "Gene biotypes, filtered")
-```
-
-```{r comparing_biotypes}
-gene_biotypes_cmp <- merge(gene_biotypes[,c(1,2)], gene_biotypes_filtered[,c(1,2)], by = "biotype", all = TRUE, suffixes = c(".all", ".filt")) %>% 
-  mutate("share" = 100 * Freq.filt / Freq.all,
-  "share.all" = 100 * Freq.all/sum(gene_biotypes$Freq),
-  "share.filt" = 100 * Freq.filt/sum(gene_biotypes_filtered$Freq)
-         )
-knitr::kable(gene_biotypes_cmp)
-```
 
 
 # Quality assessment
+
+In this section the library sizes of the samples are compared with bar- and boxplots.
 
 ## Library sizes
 
@@ -376,9 +238,182 @@ p
 ```
 
 
+
+# Filtering
+
+## Overview
+
+For a broad overview of the the gene expression distribution, each expression value (of the samples) will be summed up for each gene (combining all samples).
+For comparison to other analysis where often a threshold of `10` is chosen to omit low expressed genes:
+
+```{r densityRowsumsOverlayed}
+# pair rowsums with tissue for ggplot
+rs.df <- data.frame(rowSums = c(rowSums(counts.gastroc), rowSums(counts.soleus)),
+                    tissue = rep(c("gastrocnemius", "soleus"),
+                                 times = c(
+                                   nrow(counts.gastroc), nrow(counts.gastroc)
+                                 )))
+
+cutoff <- 10
+
+p <- ggplot(rs.df, aes(x=log(rowSums + 1), fill=tissue, color=tissue, linetype=tissue)) + 
+  geom_density(alpha=0.3) +
+  scale_fill_manual(values = unname(params$tissue_pal), aesthetics = c("fill", "color")) +
+  geom_vline(xintercept = log(cutoff +1), linetype = "solid", color="red", alpha=0.5) + 
+  annotate("text", x=log(cutoff+1), y = 0.5, label="rowSums=10", color="red") +
+  ylab("density")
+p
+```
+
+
+```{r densityRowsumsOverlayed_save, include=FALSE}
+ggsave("./plots/01_rowsums_combined.svg", p, width=16, height=8, units = "cm")
+ggsave("./plots/01_rowsums_combined.png", p, width=16, height=8, units = "cm")
+```
+
+
+Determining the actual number of genes, that would remain after applying that cutoff:
+```{r rowsums_cutoff_amount, results='hold', collapse=FALSE}
+filter(rs.df, rowSums > 10, tissue == "gastrocnemius") %>% nrow()
+filter(rs.df, rowSums > 10, tissue == "soleus") %>% nrow()
+```
+
+
+
+## omitting genes (actual filtering)
+
+We chose to omit genes having zero counts in more than 30% of the samples.
+This is a similar approach than above, but cannot be visualized as nicely.
+
+The zero-counts were detected and omitted for each tissue separately, which meant
+that the total count of genes kept differ slightly.
+
+In a future attempt of adjusting this analysis, the union of those genes could be taken,
+so that the same genes were to be kept in both tissues.
+
+
+```{r omit_zero_counts}
+omitZeroCounts <- function(counts.raw, share=0.3) {
+  keep <- (counts.raw != 0) %>%
+    rowSums() > round(share * ncol(counts.raw))
+  return(counts.raw[keep,])
+}
+
+counts.gastroc <- omitZeroCounts(counts.gastroc)
+counts.soleus <- omitZeroCounts(counts.soleus)
+```
+
+
+## Venn (Euler) Diagram
+
+```{r vennFiltered}
+sets <- list(
+  "all" = rownames(gastroc),
+  "gastrocnemius" = rownames(counts.gastroc),
+  "soleus" = rownames(counts.soleus)
+)
+
+venn.colors <- c(genes = "white", params$tissue_pal)
+
+p <- plot(
+  eulerr::euler(sets),
+  fills = venn.colors,
+  quantities = T
+)
+p
+```
+
+
+```{r vennFiltered_save, include=FALSE}
+ggsave("./plots/01_filtered_genes.svg", p)
+```
+
+
+
+## Treemap
+
+The same genes were analysed for both tissues.
+These amount to nearly 54,000 genes, which corresponds to the whole genome of mice. 
+
+To see what genes were generally found expressed in both tissues the distribution of
+gene biotypes is depicted in the following heatmap.
+
+```{r gene_biotypes}
+# custom color palette to assign each biotype a unique color (for both treemaps)
+treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
+  colorRampPalette()
+
+gene_biotypes <- table(gastroc$gene_biotype, dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  mutate(
+    biotype = stringr::str_replace_all(biotype, "_", " "),
+    colors = treemap_pal(n())
+    ) %>% 
+  arrange(desc(Freq))
+
+treemap::treemap(gene_biotypes,
+                 type = "color",
+                 index = "biotype",
+                 vSize = "Freq",
+                 vColor = "colors",
+                 title = "Gene biotypes")
+# note: it occured sometimes, that when knitting the labels are omitted in the treemap
+```
+
+
+vs the biotypes of the remaining genes (after omitting the zero-count genes) which
+occur in both tissues.
+
+
+```{r gene_biotypes_filtered}
+gene_ids <- unique(c(rownames(counts.gastroc), rownames(counts.soleus)))
+gene_biotypes_filtered <- filter(gastroc, rownames(gastroc) %in% rownames(counts.gastroc)) %>% 
+  select(gene_biotype) %>% 
+  table(dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  arrange(desc(Freq)) %>% 
+  mutate(biotype = stringr::str_replace_all(biotype, "_", " ")) %>% 
+  merge(gene_biotypes[, c("biotype", "colors")], by = "biotype") # obtain the same colors
+
+treemap::treemap(gene_biotypes_filtered,
+                 type = "color",
+                 index = "biotype",
+                 vColor = "colors",
+                 vSize = "Freq",
+                 title = "Gene biotypes, filtered")
+```
+
+The precise statistics of the changed distribution of biotypes can be seen in
+the following table:
+
+```{r comparing_biotypes}
+gene_biotypes_cmp <-
+  merge(
+    gene_biotypes[, c(1, 2)],
+    gene_biotypes_filtered[, c(1, 2)],
+    by = "biotype",
+    all = TRUE,
+    suffixes = c(".all", ".filt")
+  ) %>%
+  mutate(
+    "share"      = 100 * Freq.filt / Freq.all,
+    "share.all"  = 100 * Freq.all / sum(gene_biotypes$Freq),
+    "share.filt" = 100 * Freq.filt / sum(gene_biotypes_filtered$Freq)
+  )
+knitr::kable(gene_biotypes_cmp)
+```
+
+
+
+
 # most variable genes (top 1000) & Normalization
-To obtain the most variable genes, a `z-score` will be applied per gene to then
-take the `sd` and filter for the top 1000
+
+To gain a first look at the difference between the samples and tissues, the
+the 1000 most variable genes (according to the standard deviation) are identified
+in both tissues.
+
+For that, a `z-score` is be applied per gene followed by calculating the `sd`
+and filtering for the top 1000 genes with the highest values.
 
 
 z-score:
@@ -409,48 +444,12 @@ counts.soleus.top <- mostVariableRows(counts.soleus)
 
 
 ## visualization with Heatmaps
-To visualize the top 1000 most variable genes, I tried to generate some Heatmaps. (This time not using DESeq2::rlog, but just `log2(counts)`. Using the raw counts
-I could try to just apply `log2` to all counts and then create a heatmap.
 
-### gastroc
+To visualize the top 1000 most variable genes (union of both tissues), the zscore
+was applied on the counts and then visualized in a heatmap. By default, hierarchical 
+clustering is applied.
 
-```{r fig.width=4, fig.height=4, message=FALSE}
-# ' returning a CHM with the z-scored counts
-plot_single_CHM <- function(counts) {
-  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
-  morecols <- colorRampPalette(params$heatmap_pal)
-  
-  chm <- Heatmap(
-    as.matrix(zscore(counts)),
-    row_title = "genes",
-    name = "zscore",
-    show_row_names = FALSE,
-    column_title = "samples",
-    col = rev(morecols(50)),
-    column_title_side = "bottom"
-  )
-  return(chm)
-}
-```
-
-
-```{r heatmapGastroc, fig.width=4, fig.height=4, message=FALSE}
-chm <- plot_single_CHM(counts.gastroc.top)
-chm
-```
-
-
-### soleus
-
-```{r heatmapSoleus, fig.width=4, fig.height=4, message=FALSE}
-chm <- plot_single_CHM(counts.soleus.top)
-chm
-```
-
-
-### both tissues
-
-```{r countsBoth, fig.width=4, fig.height=4, message=FALSE, eval=FALSE}
+```{r countsBoth, message=FALSE}
 # take union of most variable genes from both tissues
 most_variable_genes <- c(rownames(counts.gastroc.top),
                          rownames(counts.soleus.top)) %>%
@@ -468,118 +467,48 @@ counts.both.top <-
 
 
 ```{r combinedHeatmap}
-plot_combined_CHM <- function(counts.df, datatype="zscore") {
-  # http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=3
-  morecols <- colorRampPalette(params$heatmap_pal)
-  
-  # annotations:
-  tissue_vec <- c(rep("gastroc", 12), rep("soleus", 12))
-  condition_vec <- c(rep(c(rep("WT", 6), rep("KO", 6)),2))
-  
-  top_annot <-
-    HeatmapAnnotation(
-      tissue = tissue_vec,
-      condition = condition_vec,
-      col = list(tissue = params$tissue_pal, condition = params$condition_pal),
-      gp = gpar(col = "darkgray"),
-      show_legend = FALSE
-    )
-  
-  ## sample numbers
-  sample_nrs <- colnames(counts.df) %>% 
-    stringr::str_extract("(?<=_)\\d{1,2}(?=_)")
-  colnames(counts.df) = sample_nrs
-  
-  chm <- Heatmap(
-    as.matrix(counts.df),
-    row_title = "most variable genes",
-    name = datatype,
-    show_row_names = FALSE,
-    show_column_names = TRUE,
-    column_title = "samples",
-    col = morecols(50),
-    column_title_side = "bottom",
-    top_annotation = top_annot,
-    column_names_gp = gpar(col = rep(unname(params$tissue_pal), each=12))
-
-  )
-  
-  # creating custom annotation legend (to obtain the gray border)
-  condition_legend = Legend(
-    labels = c("WT", "KO"),
-    legend_gp = gpar(fill = params$condition_pal),
-    border = "darkgray",
-    title = "condition"
-  )
-  tissue_legend = Legend(
-    labels = c("gastrocnemius", "soleus"),
-    legend_gp = gpar(fill = params$tissue_pal),
-    border = "darkgray",
-    title = "tissue"
-  )
-  legend_list <- list(condition_legend, tissue_legend)
-  
-  draw(chm, annotation_legend_list = legend_list)
-}
+# using the function from "code/visualizations_functions.R"
+chm <- plot_combined_CHM(zscore(counts.both.top), datatype = "zscore", params)
 ```
-
-```{r heatmapBoth}
-chm <- plot_combined_CHM(zscore(counts.both.top), datatype = "zscore")
-```
-
 
 ```{r heatmapBothSVG, include=FALSE}
-svglite::svglite(
-  "plots/01_heatmap_mvg_both.svg",
-)
+svglite::svglite( "plots/01_heatmap_mvg_both.svg")
 chm
 dev.off()
 ```
 
 
-# PCA
+## PCA
 
-The union of the top 1000 most variable genes of each tissue is used
+To the same genes is now a principal component analysis applied.
 
-```{r pca.both, message=FALSE}
-pca <- prcomp(t(counts.both.top), scale. = T)
-
-pca.data <- data.frame(Sample = rownames(pca$x),
-                       X = pca$x[, 1],
-                       Y = pca$x[, 2]) %>%
-  mutate(condition = substr(Sample, 1, 2),
-         tissue = stringr::str_extract(Sample, "[:alpha:]+$"),
-         sample_nr = stringr::str_extract(Sample, "(?<=_)\\d{1,2}(?=_)"))
-
-
-plt <-
-  autoplot(
-    pca,
-    data = pca.data,
-    colour = 'tissue',
-    shape = 'condition',
-    label.label = "sample_nr",
-    label = T,
-    label.show.legend = FALSE, # (avoiding overlapping labels in legend)
-    label.repel = T
-  ) +
-  scale_color_manual(values = unname(params$tissue_pal))
-
-
-ggsave(filename = "./plots/01_pca_mvg_both.svg", plt)
-plt
+```{r pca.both}
+# using the function from "code/visualizations_functions.R"
+p <- plot_combined_pca(counts.both.top, params)
+p
 ```
+
+
+```{r pca.both_save, include=FALSE}
+ggsave(filename = "./plots/01_pca_mvg_both.svg", p)
+```
+
 
 
 # cleaning up
 
-## SE
+To save the counts, a `SummarizedExperiment` object is created.
+This has the advantage of separating gene annotations (`rowData`) and sample metadata (`colData`)
+from the actual counts (`assay`)
 
-! important: here the rowdata of the gastroc is used as the rowdata of the soleus.
-TODO: this should be changed I believe, maybe just use here the ensembl ids and annotate them here new, so that the annotations are the same for both tissues?
-Or is it actually intended, that the annotations differ?
+As established in the beginning of this document, the gene annotations of
+gastrocnemius and soleus differed. It was assumed this was due to an error in the 
+soleus data, since it contained several `NA` values. As the genes (per Ensebml ID)
+were the same in both tissues, the gene annotation from gastrocnemius were used
+for both tissues. If the difference in the annotations was actually intended, this
+section needs to be adjusted.
 
-```{r SummarizedExperiment}
+```{r SummarizedExperiment, include=FALSE}
 # ordering data.frames by rowname (ENSMUSG ID)
 gastroc <- gastroc[order(rownames(gastroc)),]
 soleus <- soleus[order(rownames(soleus)),]
@@ -607,18 +536,22 @@ se.soleus <- SummarizedExperiment(
 )
 ```
 
-the filtered assays can be accessed as following:
+
+The filtered counts (with zero-counts omitted) can be accessed as following:
+
 ```{r SE-filter, eval=FALSE}
 counts.preFiltered <- se[rowData(se)$filtered,] %>% assay()
 ```
 
-## save R Objects
 
-```{r}
-saveRDS(se.gastroc,             file = "./data/Robjects/01_se.gastroc.rds")
-saveRDS(se.soleus,             file = "./data/Robjects/01_se.soleus.rds")
 
-# (redundant)
-saveRDS(counts.gastroc, file = "./data/Robjects/counts.gastroc.rds")
-saveRDS(counts.soleus,  file = "./data/Robjects/counts.soleus.rds")
+```{r saveRObjects, include=FALSE}
+# save R Objects
+dir.Robjects <- file.path("data", "Robjects")
+if (!dir.exists(dir.Robjects)) {
+  dir.create(dir.Robjects, recursive = T)
+}
+
+saveRDS(se.gastroc, file = file.path(dir.Robjects, "01_se.gastroc.rds"))
+saveRDS(se.soleus,  file = file.path(dir.Robjects, "01_se.soleus.rds"))
 ```
