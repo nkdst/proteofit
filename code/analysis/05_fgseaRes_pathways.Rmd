@@ -33,6 +33,47 @@ get_xml_text <- function(nodes, xpath) {
     xml_text() %>% 
     ifelse(length(.) == 0, "", .)
 }
+
+getWikiPathways <- function() {
+  
+  pathways.dir <- "./data/pathways/"
+  wikiPathways.dir <- "./data/pathways/wikiPathways"
+  wikiPathways.file <- "./data/pathways/wikiPathways.rds"
+  if (file.exists(wikiPathways.file) && !params$reevaluate) {
+    return(readRDS(wikiPathways.file))
+  }
+  
+  if (!file.exists(wikiPathways.dir)) {
+    dir.create(wikiPathways.dir)
+  }
+  
+  # download gpml files from wikiPathways
+  
+  tmp_dir <- file.path(tempdir(), "wikipathways")
+  dir.create(tmp_dir)
+  wikiPathway.zip <-
+    rWikiPathways::downloadPathwayArchive(organism = "Mus musculus",
+                                          format = 'gpml',
+                                          destpath = tmp_dir)
+  
+  gpml_files <-
+    unzip(file.path(tmp_dir, wikiPathway.zip), exdir = tmp_dir)
+  
+  df_list <- lapply(gpml_files, function(f) {
+    extract_metaInf_from_gpml(f)
+  })
+  
+  # chain merge into final dataframe
+  final_df <-
+    Reduce(function(x, y)
+      merge(x, y, all = T), df_list)
+  
+  saveRDS(final_df, wikiPathways.file)
+  
+  unlink(tmp_dir, recursive = TRUE)
+  return(final_df)
+}
+
 extract_metaInf_from_gpml <- function(gpml_file) {
   doc <- read_xml(gpml_file)
   # doc1 <- read_xml(gpml_files[119]) # Microglia pathogen phagocytosis pathway
@@ -77,45 +118,6 @@ extract_metaInf_from_gpml <- function(gpml_file) {
   
   return(df)
 }
-getWikiPathways <- function() {
-  
-  pathways.dir <- "./data/pathways/"
-  wikiPathways.dir <- "./data/pathways/wikiPathways"
-  wikiPathways.file <- "./data/pathways/wikiPathways.rds"
-  if (file.exists(wikiPathways.file) && !params$reevaluate) {
-    return(readRDS(wikiPathways.file))
-  }
-  
-  if (!file.exists(wikiPathways.dir)) {
-    dir.create(wikiPathways.dir)
-  }
-  
-  # download gpml files from wikiPathways
-  
-  tmp_dir <- file.path(tempdir(), "wikipathways")
-  dir.create(tmp_dir)
-  wikiPathway.zip <-
-    rWikiPathways::downloadPathwayArchive(organism = "Mus musculus",
-                                          format = 'gpml',
-                                          destpath = tmp_dir)
-  
-  gpml_files <-
-    unzip(file.path(tmp_dir, wikiPathway.zip), exdir = tmp_dir)
-  
-  df_list <- lapply(gpml_files, function(f) {
-    extract_metaInf_from_gpml(f)
-  })
-  
-  # chain merge into final dataframe
-  final_df <-
-    Reduce(function(x, y)
-      merge(x, y, all = T), df_list)
-  
-  saveRDS(final_df, wikiPathways.file)
-  
-  unlink(tmp_dir, recursive = TRUE)
-  return(final_df)
-}
 
 wikiPathways <- getWikiPathways()
 fgseaRes.combined <-
@@ -142,5 +144,5 @@ kableExtra::kbl(wikiPathways) %>%
 
 # currentTODOs
 
-[ ] find out biological meaning of significant pathways\
-[ ] merge `wikiPathways` with the `fgseaRes.combined` to get a better overview
+- [ ] find out biological meaning of significant pathways\
+- [ ] merge `wikiPathways` with the `fgseaRes.combined` to get a better overview

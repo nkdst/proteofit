@@ -263,11 +263,17 @@ p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
 
 ggsave(filename = file.path("plots", "04_gsea_scatter.svg"), p)
 ggsave(filename = file.path("plots", "04_gsea_scatter.png"), p)
-p
 
-# interactive:
-plotly::ggplotly(p, tooltip = "all")
+if (knitr::is_html_output()) {
+  # plain plot
+  p
+} else {
+  # interactive version with hover over if notebook
+  plotly::ggplotly(p, tooltip = "all")
+}
 ```
+
+
 
 ### barplot
 
