@@ -16,7 +16,7 @@ editor_options:
 params:
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
-  heatmap_pal: !r RColorBrewer::brewer.pal(11, "RdYlBu")
+  heatmap_pal: !r rev(RColorBrewer::brewer.pal(11, "RdYlBu"))
 ---
 
 ```{r setup, include=FALSE}
@@ -161,14 +161,18 @@ ggsave("./plots/01_rowsums_combined.png", p, width=16, height=8, units = "cm")
 p
 ```
 
+```{r rowsums_cutoff_amount, results='hold', collapse=FALSE}
+filter(rs.df, rowSums > 10, tissue == "gastrocnemius") %>% nrow()
+filter(rs.df, rowSums > 10, tissue == "soleus") %>% nrow()
+```
 
 ## omitting genes (actual filtering)
 
-We chose to omit genes using having zero counts in more than 30% of the samples.
+We chose to omit genes having zero counts in more than 30% of the samples.
 This is a similar approach than above, but cannot be visualized as nicely.
 
 
-```{r omit_zero_counts, echo=FALSE}
+```{r omit_zero_counts}
 omitZeroCounts <- function(counts.raw, share=0.3) {
   keep <- (counts.raw != 0) %>%
     rowSums() > round(share * ncol(counts.raw))
@@ -249,6 +253,15 @@ treemap::treemap(gene_biotypes_filtered,
                  vColor = "colors",
                  vSize = "Freq",
                  title = "Gene biotypes, filtered")
+```
+
+```{r comparing_biotypes}
+gene_biotypes_cmp <- merge(gene_biotypes[,c(1,2)], gene_biotypes_filtered[,c(1,2)], by = "biotype", all = TRUE, suffixes = c(".all", ".filt")) %>% 
+  mutate("share" = 100 * Freq.filt / Freq.all,
+  "share.all" = 100 * Freq.all/sum(gene_biotypes$Freq),
+  "share.filt" = 100 * Freq.filt/sum(gene_biotypes_filtered$Freq)
+         )
+knitr::kable(gene_biotypes_cmp)
 ```
 
 
