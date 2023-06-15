@@ -98,8 +98,60 @@ sum(duplicated(annot$GeneID))
 missing genes:
 ```{r}
 missingGenes <- !rownames(se.gastroc) %in% annot$GeneID
+print(paste0("There are ", sum(missingGenes), " genes not having an entry in the GRCm39 assembly genome"))
 rownames(se.gastroc)[missingGenes] %>% head(20)
 ```
+
+```{r treemap_missingGenes}
+
+# setting up colors for treemap (matching previous and following ones)
+treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
+  colorRampPalette()
+
+biotype_colors <- table(rowData(se.gastroc)$gene_biotype, dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  mutate(
+    biotype = stringr::str_replace_all(biotype, "_", " "),
+    colors = treemap_pal(n())
+    ) %>% 
+  dplyr::select(-Freq)
+
+
+genes_without_entrez <- rowData(se.gastroc) %>% as.data.frame() %>% .[missingGenes,]
+
+gene_biotypes <- table(genes_without_entrez$gene_biotype, dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  mutate(
+    biotype = stringr::str_replace_all(biotype, "_", " "),
+    ) %>% 
+  arrange(desc(Freq)) %>% 
+  merge(biotype_colors, by = "biotype") # obtain the same colors
+
+treemap::treemap(gene_biotypes,
+                 type = "color",
+                 index = "biotype",
+                 vSize = "Freq",
+                 vColor = "colors",
+                 title = "Gene biotypes",
+                 fontsize.labels = 20)
+```
+
+
+on the example of gastrocnemius looking at how many of those genes were already filtered out and not important:
+```{r pieChart_missingGenes_filtered}
+filtered.df <- data.frame(
+  group = c("expressed", "not expressed"),
+  value = c(sum(genes_without_entrez$filtered), sum(!genes_without_entrez$filtered))
+)
+ggplot(filtered.df, aes(x="", y=value, fill=group)) +
+  geom_bar(stat="identity", width=1) +
+  geom_text(aes(label = value),
+            position = position_stack(vjust = 0.5), size = 8) +
+  coord_polar("y", start=0) + 
+  theme_void() +
+  theme(legend.text = element_text(size = 17), legend.title = element_blank())
+```
+
 
 
 # consistency in the metadata (sanity checks)
@@ -243,16 +295,55 @@ subset(rdata.entrez, entrezgene_id %in% dups.entrez) %>%
   arrange(entrezgene_id, )
 ```
 
+
+```{r treemap_missingEntrezIds}
+gene_biotypes <- table(rdata.entrez$gene_biotype.x, dnn = c("biotype")) %>%
+  as.data.frame() %>%
+  mutate(
+    biotype = stringr::str_replace_all(biotype, "_", " "),
+    ) %>% 
+  arrange(desc(Freq)) %>% 
+  merge(biotype_colors, by = "biotype") # obtain the same colors
+
+treemap::treemap(gene_biotypes,
+                 type = "color",
+                 index = "biotype",
+                 vSize = "Freq",
+                 vColor = "colors",
+                 title = "Gene biotypes", 
+                 fontsize.labels = 20)
+```
+
+
+on the example of gastrocnemius looking at how many of those genes were already filtered out and not important:
+```{r pieChart_missingEntrez_filtered}
+filtered.df <- data.frame(
+  group = c("expressed", "not expressed"),
+  value = c(sum(rdata.entrez$filtered), sum(!rdata.entrez$filtered))
+)
+ggplot(filtered.df, aes(x="", y=value, fill=group)) +
+  geom_bar(stat="identity", width=1) +
+  geom_text(aes(label = value),
+            position = position_stack(vjust = 0.5), size = 8) +
+  coord_polar("y", start=0) + 
+  theme_void() +
+  theme(legend.text = element_text(size = 17), legend.title = element_blank())
+```
+
+
+
+
 ENSMUS identifier are mostly transcripts of genes. Thus there are some genes
 mapping to multiple ENSMUS ids.
 
 # duplicate ENSMUS
 
 ```{r}
+# genes in GRCm39 that have 
 dups.GeneID <- annot$GeneID %>%
   base::duplicated() %>%
-  which() %>%
-  annot$GeneID[.]
+  annot$GeneID[.] %>% 
+  unique()
 
 subset(annot, GeneID %in% dups.GeneID) %>%
   dplyr::select(GeneID, entrezgene_id, external_gene_name) %>%
@@ -265,7 +356,8 @@ dups <- annot %>%
 # this implies some genes can be annotated with several pathways and rowData can't just be extended
 # does something
 
-annot <- annot[!dups,]
+annot_withDups <- annot
+annot <- annot_withDups[!dups,]
 ```
 
 
