@@ -17,8 +17,8 @@ FCutoff <- 1
 # colors:
 condition_pal <- c("WT" = "turquoise3", "KO" = "indianred1")
 tissue_pal <- c("gastroc" = "orange", "soleus" = "purple")
-regulated_pal <- list(upregulated = 'royalblue', downregulated = 'red', insignificant = 'gray')
-heatmap_pal <- RColorBrewer::brewer.pal(11, "RdYlBu")
+regulated_pal <- list(upregulated = 'red', downregulated = 'royalblue', insignificant = 'gray')
+heatmap_pal <- rev(RColorBrewer::brewer.pal(11, "RdYlBu"))
 
 # parameter vector containing all general parameters:
 all_parameters <-
