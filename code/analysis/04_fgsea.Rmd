@@ -170,10 +170,6 @@ For now the Canonical pathways are used. These gene sets represent biological a 
 
 ```{r reading_pathways, include=FALSE}
 CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonical pathways (1687 gene sets)
-
-# previously used pathways
-# MH <- qusage::read.gmt("./data/pathways/mh.all.v2022.1.Mm.entrez.gmt") # 50 hallmark genes
-# M2 <- qusage::read.gmt("./data/pathways/m2.all.v2022.1.Mm.entrez.gmt") # curated gene set with 2600 genes
 ```
 
 # applying fgsea
