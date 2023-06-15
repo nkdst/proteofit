@@ -3,12 +3,12 @@ title: "04_GSEA analysis"
 author: "Nick Diercksen"
 date: "Last compiled on `r format(Sys.time())`"
 output:
-  html_document:
-    toc: yes
-    df_print: paged
   html_notebook:
     toc: yes
     toc_float: yes
+  html_document:
+    toc: yes
+    df_print: paged
 editor_options:
   chunk_output_type: inline
 params:
@@ -33,11 +33,15 @@ params:
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(fgsea)
+
+# plotting functions
 library(ggplot2)
-library(ggpubr)
-library(gridExtra)
+ggplot2::theme_set(theme_minimal())
+
+library(patchwork) # (combining ggplots with '+' => needed for the dotplots, ranks)
+
+library(ggpubr)   # arrange plots (top enrichment)
 library(eulerr)
-library(plotly, include.only = "ggplotly")
 ```
 
 ```{r load_rdata, include=FALSE}
@@ -68,27 +72,31 @@ getRanks <- function(res, annot) {
 
 ranks.gastroc <- getRanks(res.gastroc, annot)
 ranks.soleus <- getRanks(res.soleus, annot)
-# TODO: why (again) is the soleus gene count seemingly 300 below soleus gene count / ranks count
-# -> seems because of e.g. the cutoff at DESeq
 ```
+
 
 ## ranks distribution
 
 ```{r ranks_barplot, echo=FALSE}
-# no idea how to plot this with ggplot (one column) ...
+plot_ranks <- function(ranks, title) {
+  reshape2::melt(ranks, value.name = "rank") %>%
+    ggplot(aes(x=seq_along(rank),y=rank)) +
+    geom_bar(stat="identity") +
+    ylim(c(-20,20)) +
+    labs(x = "gene rank in ordered dataset", y = "Wald Test value") +
+    ggtitle(label = title)
+}
 
-# ggpubr::ggarrange(
-# TODO: prettify
-# barplot.file <- "./plots/04_barplot_ranks.png"
-# if (!file.exists(barplot.file)) {
-#   png(barplot.file)
-    par(mfrow = c(1, 2))
-    barplot(sort(ranks.gastroc, decreasing = T), main = "Wald Test ranks, gastroc")
-    barplot(sort(ranks.soleus, decreasing = T), main = "Wald Test ranks, soleus")
-  # dev.off()
-# }
-# )
+p.gastroc <- plot_ranks(ranks.gastroc, "gastrocnemius")
+p.soleus <- plot_ranks(ranks.soleus, "soleus")
+
+patchwork::wrap_plots(p.gastroc, p.soleus) + 
+  patchwork::plot_annotation(title = "rank distributions")
+
 ```
+
+> the gastrocnemius gene count is about 300 over the one from the soleus. This
+> is due to the significance cutoff during the `DESeq` analysis.
 
 ## duplicate entrezgene_ids
 
@@ -218,6 +226,8 @@ fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 
 ## most differential regulated pathways, both tissues
 
+### gsea scatter
+
 using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
 
 ```{r topDiff.both, warning=FALSE}
@@ -249,27 +259,30 @@ p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
   geom_vline(xintercept = 0) + 
   geom_hline(yintercept = 0) + 
   geom_point(aes(color = diff.exp)) +
-  # scale_color_manual(values = c("red", "chartreuse1", "bisque", "royalblue")) +
+  scale_color_manual(values = c("royalblue", "red", unname(params$tissue_pal["gastroc"]), unname(params$tissue_pal["soleus"]))) +
   labs(x = "gastrocnemius", y = "soleus", color = "significantly\ndifferentially\nexpressed") +
   # ggrepel::geom_label_repel(max.overlaps = 20) + 
   ggtitle(label = "Normalized Enrichment Score") +
   theme_bw()
 
 ggsave(filename = file.path("plots", "04_gsea_scatter.svg"), p)
+ggsave(filename = file.path("plots", "04_gsea_scatter.png"), p)
 p
 
 # interactive:
-# plotly::ggplotly(p, tooltip = "all")
+plotly::ggplotly(p, tooltip = "all")
 ```
 
 ### barplot
 
 ```{r gsea_scatter_barplot}
-p <- ggplot(fgseaRes.combined, aes(x = diff.exp)) +
+p <- ggplot(fgseaRes.combined, aes(x = diff.exp, fill = diff.exp)) +
+  scale_fill_manual(values = c("royalblue", "red", unname(params$tissue_pal["gastroc"]), unname(params$tissue_pal["soleus"]))) +
   geom_bar(aes(fill = diff.exp)) +
   theme_bw()
 
 ggsave(filename = file.path("plots", "04_gsea_scatter_barplot.svg"), p)
+ggsave(filename = file.path("plots", "04_gsea_scatter_barplot.png"), p)
 p
 ```
 
@@ -291,9 +304,9 @@ sign_geneSets_soleus <-
 
 # only the two tissues
 gene_sets <- list(
-  "gastroc" = sign_geneSets_gastroc,
+  "gastrocnemius" = sign_geneSets_gastroc,
   "soleus" = sign_geneSets_soleus#,
-  # "gastroc&soleus" = sign_gene_stats$shared_sig_genes
+  # "gastrocnemius&soleus" = sign_gene_stats$shared_sig_genes
 )
 
 # 1st option: euler two tissues
@@ -305,6 +318,7 @@ p <- plot(
   main = "significant gene sets (GSEA)"
 )
 ggsave(filename = file.path("plots", "04_euler.svg"), p)
+ggsave(filename = file.path("plots", "04_euler.png"), p)
 p
 
 # 2nd option: venn two tissues
@@ -315,6 +329,7 @@ p <- plot(
   main = "significant gene sets (GSEA)"
 )
 ggsave(filename = file.path("plots", "04_venn.svg"), p)
+ggsave(filename = file.path("plots", "04_venn.png"), p)
 p
 ```
 
@@ -323,7 +338,6 @@ p
 ### dotplot
 
 ```{r echo=FALSE}
-library(patchwork)
 combined_dotplot <-
   function(group,
            fgseaRes.combined = fgseaRes.combined,
@@ -437,6 +451,7 @@ group = "both up"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
 
 ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
@@ -447,7 +462,8 @@ gets adjusted by the function well. The .svg file looks okay
 group = "both down"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
 
- ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
@@ -460,6 +476,7 @@ group = "only gastrocnemius"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100)
 
 ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
@@ -473,6 +490,7 @@ gastroc.df <-
 
 p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length = 100)
 ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.gastroc)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.gastroc)
 p.gastroc
 ```
 
@@ -486,6 +504,7 @@ group = "only soleus"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100, sort_by_gastroc = F)
 
 ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
@@ -501,6 +520,7 @@ soleus.df <-
 p.soleus <-
   fgsea_dotplot(soleus.df, max_label_length = 100)
 ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.soleus)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.soleus)
 p.soleus
 ```
 
@@ -510,6 +530,7 @@ for (group in unique(fgseaRes.combined$diff.exp)) {
   p_combined <- combined_dotplot(group, fgseaRes.combined)
   
   ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
   print(p_combined)
 }
 ```
@@ -563,7 +584,7 @@ plot_top_enrichment <- function(fgseaRes, pathways, ranks, n = 9, up = TRUE) {
   arrange_plts(plot.list)
 }
 
-# ' helper function to arragen the plot from the enrichment
+# ' helper function to arrange the plot from the enrichment
 arrange_plts <- function(plt.list) {
   nplts <- length(plt.list)
   plt <- plt.list[1]
@@ -639,6 +660,16 @@ plot_labels <-
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
+
+### opposite regulated
+
+```{r enrichmentPlotOpposite}
+plotEnrichment(CGP[["REACTOME_EUKARYOTIC_TRANSLATION_INITIATION"]], ranks.gastroc)
+plotEnrichment(CGP[["REACTOME_EUKARYOTIC_TRANSLATION_INITIATION"]], ranks.soleus)
+```
+
+
+
 ## GSEA table plot
 
 ### gastroc
@@ -659,7 +690,7 @@ plotGseaTable(
   stats = ranks.gastroc,
   fgseaRes = fgseaRes.gastroc,
   gseaParam = 0.5,
-  render = TRUE
+  render = FALSE
 ) %>%
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
@@ -682,7 +713,7 @@ plotGseaTable(
   stats = ranks.soleus,
   fgseaRes = fgseaRes.soleus,
   gseaParam = 0.5,
-  render = TRUE
+  render = FALSE
 ) %>%
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
