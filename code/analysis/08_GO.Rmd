@@ -72,7 +72,7 @@ tissue_pal <- c(gastroc = "orange", soleus="purple")
 load("./data/Robjects/02_DDS.RData")
 
 # loading annotation data for entrez ids (GRCm39):
-load("./data/Robjects/02_annot.RData")
+load("./data/Robjects/03_annot.RData")
 ```
 
 used genome: Biomart Database (GRCm39)

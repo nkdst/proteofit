@@ -47,7 +47,7 @@ library(eulerr)
 ```{r load_rdata, include=FALSE}
 perform_fgsea <- params$reevaluate
 
-load("./data/Robjects/02_annot.RData") # for entrezgene_id
+load("./data/Robjects/03_annot.RData") # for entrezgene_id
 load("./data/Robjects/02_DDS.RData")   # for `stat` values from DESeq results
 ```
 

@@ -495,7 +495,7 @@ p
 library(fgsea)
 library(patchwork) # to add dotplots: p.gastroc+  p.soleus
 
-load("./data/Robjects/02_annot.RData") # for entrezgene_id
+load("./data/Robjects/03_annot.RData") # for entrezgene_id
 ```
 
 

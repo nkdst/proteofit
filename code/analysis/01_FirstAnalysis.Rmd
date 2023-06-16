@@ -17,6 +17,7 @@ params:
   condition_pal: !r c("WT"= "#00C3C6","KO"= "#FF6C67")
   tissue_pal: !r c(gastroc = "orange", soleus="purple")
   heatmap_pal: !r rev(RColorBrewer::brewer.pal(11, "RdYlBu"))
+  treemap_pal: !r colorRampPalette(RColorBrewer::brewer.pal(11, "Paired"))
 ---
 
 ```{r setup, include=FALSE}
@@ -338,15 +339,11 @@ To see what genes were generally found expressed in both tissues the distributio
 gene biotypes is depicted in the following heatmap.
 
 ```{r gene_biotypes}
-# custom color palette to assign each biotype a unique color (for both treemaps)
-treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
-  colorRampPalette()
-
 gene_biotypes <- table(gastroc$gene_biotype, dnn = c("biotype")) %>%
   as.data.frame() %>%
   mutate(
     biotype = stringr::str_replace_all(biotype, "_", " "),
-    colors = treemap_pal(n())
+    colors = params$treemap_pal(n())
     ) %>% 
   arrange(desc(Freq))
 

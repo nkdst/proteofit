@@ -7,8 +7,13 @@ output:
     toc: yes
     toc_float: yes
     df_print: paged
+  html_document:
+    toc: yes
+    df_print: paged
 editor_options: 
   chunk_output_type: inline
+params:
+  treemap_pal: !r colorRampPalette(RColorBrewer::brewer.pal(11, "Paired"))
 ---
 
 ```{r setup, include=FALSE}
@@ -17,56 +22,40 @@ library(dplyr)
 library(biomaRt)  # interface to a collection of databases
 library(stringr)
 library(SummarizedExperiment)
+library(ggplot2)
 ```
 
 # About
-This step is a preparation for the following pathway enrichment (gene set 
-enrichment with `fgsea`). To link the genes with the pathways the "entrezgene_id"
-is needed. Thus in this step, the `biomaRt` interface is used to access the 
-corresponding DBs.
+
+This step is a preparation for the following Gene Set Enrichment Analysis  (GSEA with `fgsea`) and GO analysis.
+
+To link the genes with the pathways the Entrez IDs ("entrezgene_id") is needed.
+Therefore the `biomaRt` interface is used to access the corresponding DBs.
+
 
 # read in data
 
+The Ensembl gene IDs can be found in the saved SummarizedExperiment object.
+As the genes are the same for gastrocnemius and soleus, only one set needs to be 
+loaded. The Ensembl IDs can be used to query the ensembl.org database.
+
 ```{r}
 se.gastroc <- readRDS("./data/Robjects/01_se.gastroc.rds")
+ensembl_ids <- rownames(se.gastroc)
 ```
 
 
-# setting up connection to DB
+# query biomaRt for annotations
 
-```{r include=FALSE, eval=FALSE}
-## Exploring settings:
-# view the available databases
-listMarts()
-## set up connection to ensembl database
-ensembl=useMart("ENSEMBL_MART_ENSEMBL")
-# list the available datasets (species)
-listDatasets(ensembl) %>% 
-    filter(str_detect(description, "Mouse"))
-# specify a data set to use
-ensembl = useDataset("mmusculus_gene_ensembl", mart=ensembl)
-```
-
-```{r queryBioMart, message=F, include=FALSE, eval=FALSE}
-### explore filter types:
-# check the available "filters" - things you can filter for
-listFilters(ensembl) %>% 
-    filter(str_detect(name, "ensembl"))
-# check the available "attributes" - things you can retrieve
-listAttributes(ensembl) %>% head(40)
-```
-
-
-## Retrieve full annotation
-
-* **values** - the Ensembl Gene IDs from our DE results table
-* **attributes** - columns 
+For the mouse dataset ("mmusculus_gene_ensembl") the ensembl.org database is queried
+for entries of the current Ensembl IDs.
+Besides the "entrezgene_id" some further annotation data is requested to compare
+already available annotation data.
 
 ```{r}
 # 
 ensembl.mart <- useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl", host = 'https://www.ensembl.org')
 
-filterValues <- rownames(se.gastroc)
 filterType <- "ensembl_gene_id"
 attributeNames <- c('ensembl_gene_id',
                     'entrezgene_id',
@@ -80,12 +69,13 @@ attributeNames <- c('ensembl_gene_id',
 # run the query
 annot <- getBM(attributes=attributeNames,
                filters = filterType,
-               values = filterValues,
+               values = ensembl_ids,
                mart = ensembl.mart) %>%
   dplyr::rename(GeneID=ensembl_gene_id)
 
 
 ```
+
 
 # exploring the annotation dataset:
 
@@ -95,24 +85,20 @@ sum(duplicated(annot$GeneID))
 ```
 
 
-missing genes:
+## missing genes
+
 ```{r}
-missingGenes <- !rownames(se.gastroc) %in% annot$GeneID
+missingGenes <- ! ensembl_ids %in% annot$GeneID
 print(paste0("There are ", sum(missingGenes), " genes not having an entry in the GRCm39 assembly genome"))
-rownames(se.gastroc)[missingGenes] %>% head(20)
+ensembl_ids[missingGenes] %>% head(20)
 ```
 
 ```{r treemap_missingGenes}
-
-# setting up colors for treemap (matching previous and following ones)
-treemap_pal <- RColorBrewer::brewer.pal(11, "Paired") %>% 
-  colorRampPalette()
-
 biotype_colors <- table(rowData(se.gastroc)$gene_biotype, dnn = c("biotype")) %>%
   as.data.frame() %>%
   mutate(
     biotype = stringr::str_replace_all(biotype, "_", " "),
-    colors = treemap_pal(n())
+    colors = params$treemap_pal(n())
     ) %>% 
   dplyr::select(-Freq)
 
@@ -154,7 +140,7 @@ ggplot(filtered.df, aes(x="", y=value, fill=group)) +
 
 
 
-# consistency in the metadata (sanity checks)
+## consistency in the metadata (sanity checks)
 
 the metadata from the genes originates from two sources:
 
@@ -172,7 +158,8 @@ df <- merge(annot, rowData(se.gastroc), by.x = 1, by.y = 0) %>%
   as.data.frame()
 ```
 
-## biotypes:
+
+### biotypes:
 ```{r}
 cols <- c("GeneID","gene_biotype.x", "gene_biotype.y")
 dif_biotypes <- !df$gene_biotype.x == df$gene_biotype.y
@@ -184,7 +171,7 @@ About a fifth of the genes is annotated with a different biotype. This has to be
 looked at more specifically though, since this could still be viable in the 
 biological sense.
 
-## gene names
+### gene names
 ```{r}
 cols <- c("GeneID", "external_gene_name", "gene_name")
 dif_names <- !df$external_gene_name == df$gene_name
@@ -197,7 +184,7 @@ Not as many differences as the biotypes, and most of them seem to be synonyms:
 * http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000002280;r=17:25992750-26002306
 * http://www.ensembl.org/Mus_musculus/Gene/Summary?db=core;g=ENSMUSG00000003527;r=16:17718573-17729212
 
-## chromosome
+### chromosome
 ```{r}
 cols <- c("GeneID", "chromosome_name", "gene_chr", "external_gene_name", "gene_name")
 df[(!df$chromosome_name == df$gene_chr), cols] %>% head(20)
@@ -223,8 +210,8 @@ be one of the more severe differences!
 
 
 
-## gene positions
-### start
+### gene positions
+#### start
 ```{r}
 dif_start <- df$start_position - df$gene_start
 head(dif_start, 20)
@@ -243,7 +230,7 @@ hist(abs(dif_start), breaks = 100)
 These differ quite substantially. Either these are different metrics or really
 relating to a different species.
 
-### end
+#### end
 ```{r}
 dif_end <- df$end_position - df$gene_end
 head(dif_end, 20)
@@ -272,8 +259,12 @@ start from the end position would not make sense (introns would probably
 get counted as well).
 
 
-# reviewing annotations:
-Here just a quick view at duplicate
+# reviewing joined annotations
+
+As some genes share the same Entrez IDs, several of those are displayed in the
+following.
+
+## duplicated Entrez IDs
 
 ```{r}
 # getting all genes which have entrez gene id assigned
@@ -292,9 +283,14 @@ dups.entrez <- rdata.entrez$entrezgene_id %>%
 
 subset(rdata.entrez, entrezgene_id %in% dups.entrez) %>%
   dplyr::select(GeneID, entrezgene_id, external_gene_name) %>%
-  arrange(entrezgene_id, )
+  arrange(entrezgene_id, ) %>% 
+  head()
 ```
 
+## Genes missing Entrez IDs
+
+Biotypes of the genes, which could not be assigned a Entrez ID and thus will be 
+omitted in the subsequent enrichment analysis steps.
 
 ```{r treemap_missingEntrezIds}
 gene_biotypes <- table(rdata.entrez$gene_biotype.x, dnn = c("biotype")) %>%
@@ -316,6 +312,7 @@ treemap::treemap(gene_biotypes,
 
 
 on the example of gastrocnemius looking at how many of those genes were already filtered out and not important:
+
 ```{r pieChart_missingEntrez_filtered}
 filtered.df <- data.frame(
   group = c("expressed", "not expressed"),
@@ -331,12 +328,13 @@ ggplot(filtered.df, aes(x="", y=value, fill=group)) +
 ```
 
 
-
+## duplicate ENSMUS
 
 ENSMUS identifier are mostly transcripts of genes. Thus there are some genes
 mapping to multiple ENSMUS ids.
+! this might have been induced by the joining of the downloaded annotations, which
+already had duplicate entrez IDS.
 
-# duplicate ENSMUS
 
 ```{r}
 # genes in GRCm39 that have 
@@ -367,7 +365,7 @@ annot <- annot_withDups[!dups,]
 
 ```{r}
 # TODO: merge `annot` into se metadata, rowData is not compatible?
-save(annot, file = "./data/Robjects/02_annot.RData")
+save(annot, file = "./data/Robjects/03_annot.RData")
 ```
 
 this is currently used again in `04_fgsea`.
