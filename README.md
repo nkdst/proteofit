@@ -49,6 +49,8 @@ The code is split into several .Rmd files, which are numbered in the order they 
 Best way to render/knit the files is to use the `00 remoteRender.R` script, which is also located in the `/counts/analysis/` directory. It provides the possibility to render all `.Rmd` files in the `/code/analysis` directory and save them as html documents in the `/reports` directory. The main reason for it to be used is that it allows for better control over the rendering process: I noticed that rendering the files directly from within RStudio uses graphic settings like resolution depending on which monitor is open or which device is used. 
 This lead to inconsistent plots. To remedy this the `rmarkdown::render()` function is used to produce more consistent results.
 
+Generally the pictures saved in the `/plots` directory are the ones used in the thesis, as they are optimized to have the right format and resolution. Even with rendering the plots with the dedicated script, some figures are still displayed suboptimal in the knitted files.
+
 Additionally `00 remoteRender.R` contains parameters to for example decide the color of the condition, or adjust the p-value cutoff for all documents in one place.
 
 

@@ -48,7 +48,7 @@ library(eulerr)
 perform_fgsea <- params$reevaluate
 
 load("./data/Robjects/02_annot.RData") # for entrezgene_id
-load("./data/Robjects/03_DDS.RData")   # for `stat` values from DESeq results
+load("./data/Robjects/02_DDS.RData")   # for `stat` values from DESeq results
 ```
 
 # creating ranks

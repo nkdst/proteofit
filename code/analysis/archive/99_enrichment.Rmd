@@ -21,12 +21,7 @@ library(DESeq2)
 
 
 ```{r}
-# load("./data/Robjects/Annotated_Results_LvV.RData")
-# load("./data/Robjects/Ensembl_annotations.RData")
-# load("./data/Robjects/DE.RData")
-# load("./data/Robjects/01_DDS.RData")
-# load("./data/Robjects/02_annot.RData")
-load("./data/Robjects/03_DDS.RData")
+load("./data/Robjects/02_DDS.RData")
 ```
 
 

@@ -6,6 +6,7 @@ if (!requireNamespace("stringr")) {
 
 
 library(ggplot2)
+library(ggfortify) # autoplot (PCA)
 
 if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
   devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)

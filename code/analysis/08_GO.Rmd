@@ -69,7 +69,7 @@ tissue_pal <- c(gastroc = "orange", soleus="purple")
 
 ```{r loadDESeqResult}
 # loading DESeq2 results (`res.gastroc`, and `res.soleus`):
-load("./data/Robjects/03_DDS.RData")
+load("./data/Robjects/02_DDS.RData")
 
 # loading annotation data for entrez ids (GRCm39):
 load("./data/Robjects/02_annot.RData")

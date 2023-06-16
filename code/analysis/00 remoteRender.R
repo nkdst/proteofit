@@ -70,14 +70,12 @@ customMarkdownRendering <- function(filename,
 
 
 # Documents --------------------------------------------------------------------
-# TODO: make workflow diagram!
-
 
 ## 01 First Analysis and  pre-processing ----
 customMarkdownRendering(filename = "01_FirstAnalysis")
 
-## 03 DESeq ----
-customMarkdownRendering(filename = "03_DESeq")
+## 02 DEA ----
+customMarkdownRendering(filename = "02_DEA")
 
 
 ## 04 fgsea ----

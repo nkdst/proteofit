@@ -44,7 +44,7 @@ tissue_pal <- c(gastroc = "orange", soleus="purple")
 
 ```{r loadData, include=FALSE}
 # loading DESeq2 results (`res.gastroc`, and `res.soleus`):
-load("./data/Robjects/03_DDS.RData")
+load("./data/Robjects/02_DDS.RData")
 ```
 
 # About
