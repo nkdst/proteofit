@@ -39,6 +39,8 @@ library(SummarizedExperiment)
 source(file.path("code", "visualization_functions.R"))
 
 ggplot2::theme_set(theme_bw())
+
+plot.dir <- file.path("plots", "01 Analysis and Filtering")
 ```
 
 # Overview
@@ -267,8 +269,8 @@ p
 
 
 ```{r densityRowsumsOverlayed_save, include=FALSE}
-ggsave("./plots/01_rowsums_combined.svg", p, width=16, height=8, units = "cm")
-ggsave("./plots/01_rowsums_combined.png", p, width=16, height=8, units = "cm")
+ggsave(file.path(plot.dir, "01_rowsums_combined.svg"), p, width=16, height=8, units = "cm")
+ggsave(file.path(plot.dir, "01_rowsums_combined.png"), p, width=16, height=8, units = "cm")
 ```
 
 
@@ -325,7 +327,7 @@ p
 
 
 ```{r vennFiltered_save, include=FALSE}
-ggsave("./plots/01_filtered_genes.svg", p)
+ggsave(file.path(plot.dir, "01_filtered_genes.svg"), p)
 ```
 
 
@@ -468,7 +470,7 @@ chm <- plot_combined_CHM(zscore(counts.both.top), datatype = "zscore", params)
 ```
 
 ```{r heatmapBothSVG, include=FALSE}
-svglite::svglite( "plots/01_heatmap_mvg_both.svg")
+svglite::svglite( file.path(plot.dir, "01_heatmap_mvg_both.svg") )
 chm
 dev.off()
 ```
@@ -486,7 +488,7 @@ p
 
 
 ```{r pca.both_save, include=FALSE}
-ggsave(filename = "./plots/01_pca_mvg_both.svg", p)
+ggsave(file.path(plot.dir, "01_pca_mvg_both.svg"), p)
 ```
 
 

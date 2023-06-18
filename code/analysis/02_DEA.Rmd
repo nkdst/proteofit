@@ -44,6 +44,8 @@ library(RColorBrewer)
 source(file.path("code", "visualization_functions.R"))
 
 ggplot2::theme_set(theme_bw())
+
+plot.dir <- file.path("plots", "02 DEA")
 ```
 
 
@@ -311,12 +313,12 @@ volcanoPlot <- function(result, se, pCutoff = 0.01, FCutoff = 1, tissue = charac
 
 ```{r volcano, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 p <- volcanoPlot(res.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
-ggsave(filename = "plots/02_volcano_gastroc.svg", p)
-ggsave(filename = "plots/02_volcano_gastroc.png", p)
+ggsave(file.path(plot.dir, "02_volcano_gastroc.svg"), p)
+ggsave(file.path(plot.dir, "02_volcano_gastroc.png"), p)
 p
 p <- volcanoPlot(res.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
-ggsave(filename = "plots/02_volcano_soleus.svg", p)
-ggsave(filename = "plots/02_volcano_soleus.png", p)
+ggsave(file.path(plot.dir, "02_volcano_soleus.svg"), p)
+ggsave(file.path(plot.dir, "02_volcano_soleus.png"), p)
 p
 ```
 
@@ -325,12 +327,12 @@ p
 ```{r volcanoLFC, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 
 p <- volcanoPlot(resLFC.gastroc, se.gastroc, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "gastrocnemius")
-ggsave(filename = "plots/02_volcano_gastroc_LFC.svg", p)
-ggsave(filename = "plots/02_volcano_gastroc_LFC.png", p)
+ggsave(file.path(plot.dir, "02_volcano_gastroc_LFC.svg"), p)
+ggsave(file.path(plot.dir, "02_volcano_gastroc_LFC.png"), p)
 p
 p <- volcanoPlot(resLFC.soleus, se.soleus, pCutoff = params$pCutoff, FCutoff = params$FCutoff, tissue = "soleus")
-ggsave(filename = "plots/02_volcano_soleus_LFC.svg", p)
-ggsave(filename = "plots/02_volcano_soleus_LFC.png", p)
+ggsave(file.path(plot.dir, "02_volcano_soleus_LFC.svg"), p)
+ggsave(file.path(plot.dir, "02_volcano_soleus_LFC.png"), p)
 p
 ```
 
@@ -399,8 +401,8 @@ p <- ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
     legend.text = element_text(size = 10)
   )
 
-ggsave(filename = "plots/02_dea_scatter.svg", p)
-ggsave(filename = "plots/02_dea_scatter.png", p)
+ggsave(file.path(plot.dir, "02_dea_scatter.svg"), p)
+ggsave(file.path(plot.dir, "02_dea_scatter.png"), p)
 p
 ```
 
@@ -411,8 +413,8 @@ p
 p <- ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp)) +
   theme_bw()
-ggsave(filename = "plots/02_dea_scatter_barplot.svg", p)
-ggsave(filename = "plots/02_dea_scatter_barplot.png", p)
+ggsave(file.path(plot.dir, "02_dea_scatter_barplot.svg"), p)
+ggsave(file.path(plot.dir, "02_dea_scatter_barplot.png"), p)
 p
 ```
 
@@ -669,8 +671,8 @@ p
 
 
 ```{r vennDiagram_save, include=FALSE}
-ggsave("./plots/02_euler.svg", p)
-ggsave("./plots/02_euler.png", p)
+ggsave(file.path(plot.dir, "02_euler.svg"), p)
+ggsave(file.path(plot.dir, "02_euler.png"), p)
 ```
 
 
@@ -733,12 +735,12 @@ chm <- plot_combined_CHM(zscore(counts_sign), params=params)
 
 ```{r heatmap_save, include=FALSE}
 # saving as .svg
-svglite::svglite("./plots/02_heatmap_sign_genes.svg", width=6, height=6)
+svglite::svglite(file.path(plot.dir, "02_heatmap_sign_genes.svg"), width=6, height=6)
 chm
 dev.off()
 
 # saving as .png
-png("./plots/02_heatmap_sign_genes.png", width=6, height=6, units = "in", res = 1200)
+png(file.path(plot.dir, "02_heatmap_sign_genes.png"), width=6, height=6, units = "in", res = 1200)
 chm
 dev.off()
 ```
@@ -755,8 +757,8 @@ p
 
 
 ```{r pca_sign_counts_normalized_save, include=FALSE}
-ggsave(filename = "plots/02_pca_dea_sign.svg", p)
-ggsave(filename = "plots/02_pca_dea_sign.png", p)
+ggsave(file.path(plot.dir, "02_pca_dea_sign.svg"), p)
+ggsave(file.path(plot.dir, "02_pca_dea_sign.png"), p)
 ```
 
 

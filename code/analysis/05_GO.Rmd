@@ -1,0 +1,245 @@
+---
+title: "08_GO"
+author: "Nick Diercksen"
+date: "Last compiled on `r format(Sys.time())`"
+output:
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    df_print: paged
+# editor_options: 
+#   chunk_output_type: inline
+params:
+  FCutoff:
+    label: cutoff for the log2FoldChange
+    value: 1
+  pCutoff:
+    label: "cutoff for the adjusted p-Value"
+    value: 0.01
+  knitting_parameters_used:
+    label: "helper variable for knitting, should not be changed"
+    value: TRUE
+  fgsea.maxSize:
+    label: "parameter for `fgsea`: 'Maximal size of a gene set to test. All pathways above the threshold are excluded.'"
+    value: 200
+  reevaluate:
+    label: Should all calculations and database lookups be done again or just e.g.
+      graphics regenerated
+    value: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(clusterProfiler)
+```
+
+```{r plotSettings, include=FALSE}
+ggplot2::theme_set(theme_bw())
+
+plot.dir <- file.path("plots", "05 GO")
+```
+
+# GO analysis
+
+This is an alternative approach to using the `fgsea` method (see "04_fgsea.Rmd")
+which is better suited to compare it with other findings of Imke Lemmer.
+
+
+```{r loadDESeqResult}
+# loading DESeq2 results (`res.gastroc`, and `res.soleus`):
+load("./data/Robjects/02_DDS.RData")
+
+# loading annotation data for entrez ids (GRCm39):
+load("./data/Robjects/03_annot.RData")
+```
+
+used genome: Biomart Database (GRCm39)
+
+# clusterProfiler: enrichGO
+
+```{r goFunction}
+performGO_dotplot <- function(entrez_ids, plot_name, pCutoff = params$pCutoff) {
+  result_GO <- enrichGO(
+    entrez_ids,
+    OrgDb =  "org.Mm.eg.db",
+    ont = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff = pCutoff,
+    readable = T
+  )
+  
+  # plot:
+  p <- dotplot(result_GO, showCategory = 15) +
+    scale_color_gradient(
+      low = "red",
+      high = "blue",
+      labels = function(x)
+        format(x, digits = 2)
+    )
+  ggsave(
+    filename = file.path(
+      plot.dir,
+      paste0("05_enrichGO_dotplot_", plot_name, ".svg")
+    ),
+    plot = p
+  )
+  return(p)
+}
+```
+
+## all gastroc
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_general")
+```
+
+
+
+## all soleus
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_general")
+```
+
+
+## gastroc - upregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat > 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_upregulated")
+```
+
+
+
+## gastroc - downregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat < 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_downregulated")
+```
+
+
+## soleus - upregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat > 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_upregulated")
+```
+
+
+
+## soleus - downregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff, stat < 0, baseMean > 100) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_downregulated")
+```
+
+---
+
+# without baseMean filter:
+
+To see the effect of not filtering out genes with a baseMean lower than 100:
+
+## all gastroc
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_general_noBmf")
+```
+
+
+
+## all soleus
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_general_noBmf")
+```
+
+
+## gastroc - upregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_upregulated_noBmf")
+```
+
+
+
+## gastroc - downregulated
+```{r}
+ids <- res.gastroc %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "gastroc_downregulated_noBmf")
+```
+
+
+## soleus - upregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_upregulated_noBmf")
+```
+
+
+
+## soleus - downregulated
+```{r}
+ids <- res.soleus %>%
+  data.frame() %>% 
+  filter(padj < params$pCutoff) %>% 
+  merge(annot[,c("GeneID", "entrezgene_id")], by.x = 0, by.y = "GeneID") %>% 
+  pull("entrezgene_id")
+
+performGO_dotplot(entrez_ids = ids, "soleus_downregulated_noBmf")
+```

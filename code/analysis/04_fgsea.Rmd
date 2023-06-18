@@ -36,24 +36,44 @@ library(fgsea)
 
 # plotting functions
 library(ggplot2)
-ggplot2::theme_set(theme_minimal())
+library(eulerr)
 
 library(patchwork) # (combining ggplots with '+' => needed for the dotplots, ranks)
-
 library(ggpubr)   # arrange plots (top enrichment)
-library(eulerr)
 ```
 
-```{r load_rdata, include=FALSE}
-perform_fgsea <- params$reevaluate
 
-load("./data/Robjects/03_annot.RData") # for entrezgene_id
+```{r plottingSettings, include=FALSE}
+# ggplot2::theme_set(theme_minimal())
+ggplot2::theme_set(theme_bw())
+
+plot.dir <- file.path("plots", "04 GSEA")
+```
+
+
+In this document the Gene Set Enrichment Analysis (GSEA) will be performed using
+`fgsea`. Besides the package, the results from the DEA are needed to provide the
+ranked list of genes to be investigated for enrichment, and the pathways stemming
+from the previous step.
+
+
+```{r load_rdata}
 load("./data/Robjects/02_DDS.RData")   # for `stat` values from DESeq results
+load("./data/Robjects/03_annot.RData") # for entrezgene_id
 ```
 
-# creating ranks
+# ranks
 
-the `ranks` will be a `named num`, with `entrezgene_id` as name and `stat` (Wald Test) as metric
+## obtaining ranks
+
+the `ranks` will be a `named num`, with `entrezgene_id` as name and `stat` (Wald
+Test) as metric.
+
+Currently all genes for which Entrez IDs could be found and were investigated in
+the DEA are used in this analysis. Meaning independent of whether they were flagged
+as significantly differentially expressed.
+!This step here could be adjusted in the future to only contain genes, which were
+flagged as significantly DE.
 
 ```{r getting_ranks}
 getRanks <- function(res, annot) {
@@ -75,7 +95,10 @@ ranks.soleus <- getRanks(res.soleus, annot)
 ```
 
 
-## ranks distribution
+## distribution of ranks
+
+As the t-statistics represent the ranks, their distribution is plotted for both
+tissues.
 
 ```{r ranks_barplot, echo=FALSE}
 plot_ranks <- function(ranks, title) {
@@ -95,68 +118,15 @@ patchwork::wrap_plots(p.gastroc, p.soleus) +
 
 ```
 
-> the gastrocnemius gene count is about 300 over the one from the soleus. This
-> is due to the significance cutoff during the `DESeq` analysis.
 
-## duplicate entrezgene_ids
+The distribution clearly resembles the volcano or MA plots of the DEA in step 2,
+as the genes of the gastrocnemius show significantly higher magnitudes.
 
-duplicate entrezgene ids (multiple entrez are mapped to the same gene name)
-
-Thus a quick look if any of these genes can be simply omitted. Like if the gene_type is "other" or "tRNA"
-
-```{r include=FALSE}
-# TODO: do not use annot, but the merge? (actually used genes!)
-# first looking at ENSEMBL:
-duplicate_ENSEMBL <- annot[duplicated(annot$GeneID), ] %>%
-  dplyr::group_by(GeneID, gene_biotype) %>%
-  summarise(n = n())
-
-# looking at gene_names(ext):
-duplicate_geneNames <- annot[duplicated(annot$external_gene_name), ] %>% 
-  dplyr::group_by(GeneID, gene_biotype) %>%
-  summarise(n = n())
-
-# duplicates have always the same gene_biotype! (in no more than one group occurs the same GeneID)
-anyDuplicated(duplicate_ENSEMBL$GeneID)   # 0
-anyDuplicated(duplicate_geneNames$GeneID) # 0
-
-# are all gene_name duplicates in ENS duplicates?
-sum(duplicate_ENSEMBL$GeneID %in% duplicate_geneNames$GeneID) %>%
-  sprintf(
-    "%d / %d ENSEMBL duplications are also included in the duplicated gene_names",
-    .,
-    nrow(duplicate_ENSEMBL)
-  )
-
-diff_ENS_gene <- nrow(duplicate_geneNames) -nrow(duplicate_ENSEMBL)
-```
-
-Since all ENSEMBL duplicates are also found in the gene_name duplicates, using the ENSEMBL as id for the ranks would reduce the number of duplicates by `r diff_ENS_gene`.
-
-actually most of them are "protein coding" and will not be omitted. to be continued ...
-
-```{r eval=FALSE, include=FALSE}
-# TODO: do a e.g. bar-plot with the distribution of gene_biotypes of the duplicates
-#       vs the whole genome
-# create the df for plotting
-
-ENS <- duplicate_ENSEMBL %>%
-  dplyr::group_by(gene_biotype) %>%
-  summarise(count = sum(n))
+The x-axis of the gastrocnemius is also slightly bigger. With `r length(ranks.gastroc)` genes the gastrocnemius gene count is more than  300 over the one from the
+soleus (`r length(ranks.soleus)`). This is due to the pre-filtering in step 1.
 
 
-GN <- duplicate_geneNames %>%
-  dplyr::group_by(gene_biotype) %>%
-  summarise(count = sum(n))
-
-
-
-ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
-  geom_bar(stat="identity")
-
-```
-
-# loading pathways
+# pathways
 
 Pathways are provided by <http://www.gsea-msigdb.org/gsea/msigdb/mouse/collections.jsp>
 
@@ -174,6 +144,9 @@ CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonic
 
 # applying fgsea
 
+`fgsea` is called as depicted below.
+
+
     fgseaRes <- fgsea(
       pathways = CGP,
       stats    = ranks,
@@ -181,10 +154,15 @@ CGP <- qusage::read.gmt("./data/pathways/m2.cp.v2022.1.Mm.entrez.gmt") # canonic
       maxSize  = `r params$fgsea.maxSize`
     )
 
-```{r fgsea_res_load, include=FALSE}
+
+The actual used code was constructed so that it was easier to adjust the maximum
+size of a pathway (number of genes). It was a parameter to be tuned to yield
+yield proper results:
+
+```{r fgsea_res_load}
 # ' returns the fgsea result
 # ' `tissue` needs to be one of {"soleus", "soleus"}
-# ' Also saves the results locally to avoid too much queries
+# ' It saves the results locally to avoid too many queries
 get_fgseaRes <- function(tissue, ranks, maxSize=params$fgsea.maxSize, pathways=CGP, saveResults=T) {
   robjects.path <- file.path(".", "data", "Robjects")
   fgseaRes.path <- file.path(
@@ -220,15 +198,17 @@ fgseaRes.gastroc <- get_fgseaRes("gastroc", ranks.gastroc, pathways=CGP)
 fgseaRes.soleus <- get_fgseaRes("soleus", ranks.soleus, pathways=CGP)
 ```
 
-## most differential regulated pathways, both tissues
+# most differential regulated pathways, both tissues
 
-### gsea scatter
+The most significantly enriched pathways are chosen by having a adjusted p-value
+higher than `r params$pCutoff`.
 
-using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
+Taking these Normalized Enrichment Scores (NES) from both tissues, they can be
+categorized whether both tissues are up- or down-regulated or just one…
 
-```{r topDiff.both, warning=FALSE}
-
+```{r filter_most_diff_pathways}
 pCutoff <- params$pCutoff
+
 fgseaRes.combined <- merge(
   data.frame(fgseaRes.gastroc[, c("pathway", "NES", "padj")]),
   data.frame(fgseaRes.soleus[, c("pathway", "NES", "padj")]),
@@ -249,8 +229,13 @@ fgseaRes.combined <- merge(
       TRUE ~ "different"
     )
   )
+```
 
-# final plot
+## gsea scatter
+
+using `NES` from the fgsea result filtering on the set ``` pCutoff=``r params$pCutoff ``` yields the following plot:
+
+```{r topDiff.both, warning=FALSE}
 p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
   geom_vline(xintercept = 0) + 
   geom_hline(yintercept = 0) + 
@@ -258,39 +243,36 @@ p <- ggplot(fgseaRes.combined, aes(x = NES.ga, y = NES.sol, text=pathway)) +
   scale_color_manual(values = c("royalblue", "red", unname(params$tissue_pal["gastroc"]), unname(params$tissue_pal["soleus"]))) +
   labs(x = "gastrocnemius", y = "soleus", color = "significantly\ndifferentially\nexpressed") +
   # ggrepel::geom_label_repel(max.overlaps = 20) + 
-  ggtitle(label = "Normalized Enrichment Score") +
-  theme_bw()
-
-ggsave(filename = file.path("plots", "04_gsea_scatter.svg"), p)
-ggsave(filename = file.path("plots", "04_gsea_scatter.png"), p)
-
-if (knitr::is_html_output()) {
-  # plain plot
-  p
-} else {
-  # interactive version with hover over if notebook
-  plotly::ggplotly(p, tooltip = "all")
-}
+  ggtitle(label = "Normalized Enrichment Score")
 ```
 
 
+```{r topDiff.both_save, warning=FALSE, include=FALSE}
+# save plain version
+ggsave(filename = file.path("plots", "04_gsea_scatter.svg"), p)
+ggsave(filename = file.path("plots", "04_gsea_scatter.png"), p)
 
-### barplot
+# display interactive version
+plotly::ggplotly(p, tooltip = "all")
+```
 
-```{r gsea_scatter_barplot}
+
+barplot:
+
+```{r gsea_scatter_barplot, include=FALSE}
+# belongs to the scatter plot for better visualization of the distribution
 p <- ggplot(fgseaRes.combined, aes(x = diff.exp, fill = diff.exp)) +
   scale_fill_manual(values = c("royalblue", "red", unname(params$tissue_pal["gastroc"]), unname(params$tissue_pal["soleus"]))) +
-  geom_bar(aes(fill = diff.exp)) +
-  theme_bw()
+  geom_bar(aes(fill = diff.exp))
 
 ggsave(filename = file.path("plots", "04_gsea_scatter_barplot.svg"), p)
 ggsave(filename = file.path("plots", "04_gsea_scatter_barplot.png"), p)
 p
 ```
 
-### Venn/Euler-Diagram
+Euler-Diagram:
 
-```{r vennDiagramGSEA}
+```{r vennDiagramGSEA, include=FALSE}
 venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 sign_geneSets_gastroc <-
@@ -307,11 +289,10 @@ sign_geneSets_soleus <-
 # only the two tissues
 gene_sets <- list(
   "gastrocnemius" = sign_geneSets_gastroc,
-  "soleus" = sign_geneSets_soleus#,
-  # "gastrocnemius&soleus" = sign_gene_stats$shared_sig_genes
+  "soleus" = sign_geneSets_soleus
 )
 
-# 1st option: euler two tissues
+# euler: two tissues
 p <- plot(
   euler(gene_sets),
   quantities = T,
@@ -322,24 +303,24 @@ p <- plot(
 ggsave(filename = file.path("plots", "04_euler.svg"), p)
 ggsave(filename = file.path("plots", "04_euler.png"), p)
 p
-
-# 2nd option: venn two tissues
-library(eulerr)
-p <- plot(
-  eulerr::venn(gene_sets),
-  fills = params$tissue_pal,
-  main = "significant gene sets (GSEA)"
-)
-ggsave(filename = file.path("plots", "04_venn.svg"), p)
-ggsave(filename = file.path("plots", "04_venn.png"), p)
-p
 ```
 
 
 
-### dotplot
+## dotplot
 
-```{r echo=FALSE}
+For better visualization of the GSEA results, the significant genes are presented
+with dotpltos.
+
+Here a custom dotplot function is created. To compare the findings in both tissues,
+two dotplots, one for each tissue, can be created side by side.
+
+```{r echo=FALSE, include=FALSE}
+# ' Creates a dotplot for each tissue of the respective group.
+# ' ----------
+# ' The group needs to be value within the `diff.exp` column of the 
+# ' `fgseaRes.combined`.
+# ' 
 combined_dotplot <-
   function(group,
            fgseaRes.combined = fgseaRes.combined,
@@ -375,9 +356,9 @@ combined_dotplot <-
       c(min(gastroc.df$NES, soleus.df$NES),
         max(gastroc.df$NES, soleus.df$NES))
     
-    p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length, padj_limits, NES_limits)
+    p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length = max_label_length, padj_limits, NES_limits)
 
-    p.soleus <- fgsea_dotplot(soleus.df, max_label_length, padj_limits, NES_limits)
+    p.soleus <- fgsea_dotplot(soleus.df, max_label_length = max_label_length, padj_limits, NES_limits)
     
     # adjust plots
     p.gastroc <- p.gastroc +
@@ -399,6 +380,8 @@ combined_dotplot <-
   }
 
 
+# ' Creates a dotplot of the given results dataframe
+# ' ----------
 fgsea_dotplot <-
   function(fgseaRes.df,
            max_label_length=25,
@@ -408,11 +391,10 @@ fgsea_dotplot <-
   size_breaks[1] <- 10
   size_range <- c(2,8)
   
-  # adjust label size if the plot has too many sets:
   label_size <- 8
   nsets <- nrow(fgseaRes.df)
   if (nsets > 15) {
-    
+    # adjust label size if the plot has too many sets:
     label_size <- label_size - (0.05 * nsets)
     max_label_length <- nsets + 10
     size_range <- size_range -1
@@ -443,44 +425,58 @@ fgsea_dotplot <-
   }
 ```
 
-> Note: Different to most other plots, the dotplots seem to be created best by running the chunks manually. This results in automatic axis scaling with more entries, so that the labels do not overlap (which is curiously not the case if remotely knitting)!
+> Note: Different to most other plots, the dotplots seem to be created best by
+running the chunks manually. Especially the plots saved to the file-system.
+This results in automatic axis scaling with more entries, so that the labels do
+not overlap (which is curiously not the case if remotely knitting)!
 
 
-#### dotplot: "both upregulated"
+In the following the dotplots are created for the different groups identified
+above …
+
+
+### "both upregulated"
 only 7 gene sets => fits well in the plot
 ```{r dotplotBothUp}
 group = "both up"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
-
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
+```{r dotplotBothUp_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+```
 
-#### dotplot: "both down"
+
+### "both down"
 gets adjusted by the function well. The .svg file looks okay
 ```{r dotplotBothDown}
 group = "both down"
 p_combined <- combined_dotplot(group, fgseaRes.combined)
-
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
+```{r dotplotBothDown_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+```
 
-#### dotplot: "only gastrocnemius"
-gets adjusted by the function well. The .svg file looks okay
+
+### "only gastrocnemius"
 
 ```{r dotplotGastroc}
 group = "only gastrocnemius"
-p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100)
-
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 200)
 p_combined
 ```
+
+```{r dotplotGastroc_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+```
+
+The results of gastrocnemius in a single plot:
 
 ```{r dotplotGastrocSingle}
 group = "only gastrocnemius"
@@ -491,25 +487,30 @@ gastroc.df <-
   arrange(NES)
 
 p.gastroc <- fgsea_dotplot(gastroc.df, max_label_length = 100)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.gastroc)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.gastroc)
 p.gastroc
 ```
 
+```{r dotplotGastrocSingle_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.gastroc)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.gastroc)
+```
 
 
-#### dotplot: "only soleus"
-gets adjusted by the function well. The .svg file looks okay
+### "only soleus"
 
 ```{r dotplotSoleus}
 group = "only soleus"
 p_combined <- combined_dotplot(group, fgseaRes.combined, max_label_length = 100, sort_by_gastroc = F)
-
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
 p_combined
 ```
 
+```{r dotplotSoleus_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+```
+
+
+The results of soleus in a single plot:
 
 ```{r dotplotSoleusSingle}
 group = "only soleus"
@@ -521,24 +522,30 @@ soleus.df <-
 
 p.soleus <-
   fgsea_dotplot(soleus.df, max_label_length = 100)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.soleus)
-ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.soleus)
 p.soleus
 ```
 
-#### dotplot: top20
-```{r include=FALSE}
+```{r dotplotSoleusSingle_save, include=FALSE}
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.svg")), p.soleus)
+ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "_single.png")), p.soleus)
+```
+
+
+
+
+```{r top_20 eval=FALSE, include=FALSE}
+# could
 for (group in unique(fgseaRes.combined$diff.exp)) {
-  p_combined <- combined_dotplot(group, fgseaRes.combined)
+  p_combined <- combined_dotplot(group, fgseaRes.combined, topn = 20)
   
-  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".svg")), p_combined)
-  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, ".png")), p_combined)
+  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "top20", ".svg")), p_combined)
+  ggsave(filename = file.path("plots", paste0("04_gsea_dotplot_", group, "top20", ".png")), p_combined)
   print(p_combined)
 }
 ```
 
 
-## Enrichment score plot
+# Enrichment score plot
 
 ordering pathways by padj values and using `ES` to
 
@@ -623,7 +630,7 @@ arrange_plts <- function(plt.list) {
 
 ```
 
-### gastroc up
+## gastroc up
 
 ```{r}
 plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=T)
@@ -634,7 +641,7 @@ plot_labels <-
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
-### gastroc down
+## gastroc down
 
 ```{r}
 plot_top_enrichment(fgseaRes.gastroc, CGP, ranks.gastroc, up=F)
@@ -643,7 +650,7 @@ plot_labels <-
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
-### soleus up
+## soleus up
 
 ```{r}
 plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=T)
@@ -653,7 +660,7 @@ plot_labels <-
 knitr::kable(caption = "plot labels", plot_labels)
 ```
 
-### soleus down
+## soleus down
 
 ```{r}
 plot_top_enrichment(fgseaRes.soleus, CGP, ranks.soleus, up=F)
@@ -663,7 +670,7 @@ knitr::kable(caption = "plot labels", plot_labels)
 ```
 
 
-### opposite regulated
+## opposite regulated
 
 ```{r enrichmentPlotOpposite}
 plotEnrichment(CGP[["REACTOME_EUKARYOTIC_TRANSLATION_INITIATION"]], ranks.gastroc)
@@ -672,11 +679,12 @@ plotEnrichment(CGP[["REACTOME_EUKARYOTIC_TRANSLATION_INITIATION"]], ranks.soleus
 
 
 
-## GSEA table plot
+# GSEA table plot
 
-### gastroc
+GESEA table plots of the top 10 up- and down-regulated pathways.
 
-top significant pathways:
+## gastroc
+
 
 ```{r}
 # creating up and down regulated pathway vectors separately to maintain order
@@ -697,7 +705,7 @@ plotGseaTable(
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
 
-### soleus
+## soleus
 
 top significant pathways:
 
@@ -720,11 +728,11 @@ plotGseaTable(
   ggpubr::as_ggplot() # needed since, for whatever reason only `NULL` gets returned if `plotGseaTable` is rendered inline
 ```
 
-### list of all significant pathways
+## list of all significant pathways
 
-pathways will be sorted here by the absolute sum of the NES...
+pathways will be sorted here by the magnitude of the NES…
 
-#### both down
+### both down
 
 ```{r}
 fgseaRes.combined %>% 
@@ -735,7 +743,7 @@ fgseaRes.combined %>%
   rmarkdown::paged_table(options = list(cols.min.print = 2))
 ```
 
-#### both up
+### both up
 
 ```{r}
 fgseaRes.combined %>% 
@@ -746,7 +754,7 @@ fgseaRes.combined %>%
   rmarkdown::paged_table(options = list(cols.min.print = 2))
 ```
 
-#### only gastroc
+### only gastroc
 
 ```{r}
 fgseaRes.combined %>% 
@@ -757,7 +765,7 @@ fgseaRes.combined %>%
   rmarkdown::paged_table(options = list(cols.min.print = 2))
 ```
 
-#### only soleus
+### only soleus
 
 ```{r}
 fgseaRes.combined %>% 
@@ -771,13 +779,3 @@ fgseaRes.combined %>%
 ```{r include = FALSE}
 saveRDS(fgseaRes.combined, file = "./data/Robjects/04_fgseaRes.combined.rds")
 ```
-
-# currentTODOs
-
--   [ ] looking at duplicate entrezgene_ids\
--   [ ] finding optimal `maxSize` (one sided curve)\
--   [ ] find out biological meaning of significant pathways\
--   [ ] improve fgsea plots\
-    -   [ ] improve labels (not overlapping with axes)\
-    -   [ ] better align them ? [[https://www.biostars.org/p/438985/\\\\](https://www.biostars.org/p/438985/){.uri}](%5Bhttps://www.biostars.org/p/438985/%5D(https://www.biostars.org/p/438985/)%7B.uri%7D){.uri}
-    -   [ ] maybe unify the axis scaling\

@@ -25,6 +25,14 @@ library(SummarizedExperiment)
 library(ggplot2)
 ```
 
+
+
+```{r plottingSettings, include=FALSE}
+ggplot2::theme_set(theme_bw())
+
+plot.dir <- file.path("plots", "03 annotation")
+```
+
 # About
 
 This step is a preparation for the following Gene Set Enrichment Analysis  (GSEA with `fgsea`) and GO analysis.
