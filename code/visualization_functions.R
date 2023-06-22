@@ -97,9 +97,14 @@ plot_combined_pca <- function(counts.df, params){
       label.label = "sample_nr",
       label = T,
       label.show.legend = FALSE, # (avoiding overlapping labels in legend)
-      label.repel = T
+      label.repel = T,
+      
     ) +
-    scale_color_manual(values = unname(params$tissue_pal))
+    scale_color_manual(values = unname(params$tissue_pal)) + 
+    theme(legend.text = element_text(size = 13),
+          legend.title = element_text(size = 15)) +
+    guides(shape = guide_legend(override.aes = list(size = 4)),
+           color = guide_legend(override.aes = list(size = 4)))
   
   return(plt)
 }

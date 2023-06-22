@@ -121,9 +121,16 @@ gene_biotypes <- table(genes_without_entrez$gene_biotype, dnn = c("biotype")) %>
   arrange(desc(Freq)) %>% 
   merge(biotype_colors, by = "biotype") # obtain the same colors
 
+# add percentage
+gene_biotypes <- gene_biotypes %>% 
+  mutate(
+    share = round(Freq / sum(gene_biotypes$Freq),2) * 100,
+    label = paste0(biotype, "\n", share, "%")
+  )
+
 treemap::treemap(gene_biotypes,
                  type = "color",
-                 index = "biotype",
+                 index = "label",
                  vSize = "Freq",
                  vColor = "colors",
                  title = "Gene biotypes",
@@ -309,9 +316,16 @@ gene_biotypes <- table(rdata.entrez$gene_biotype.x, dnn = c("biotype")) %>%
   arrange(desc(Freq)) %>% 
   merge(biotype_colors, by = "biotype") # obtain the same colors
 
+# add percentage
+gene_biotypes <- gene_biotypes %>% 
+  mutate(
+    share = round(Freq / sum(gene_biotypes$Freq),2) * 100,
+    label = paste0(biotype, "\n", share, "%")
+  )
+
 treemap::treemap(gene_biotypes,
                  type = "color",
-                 index = "biotype",
+                 index = "label",
                  vSize = "Freq",
                  vColor = "colors",
                  title = "Gene biotypes", 

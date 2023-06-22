@@ -272,7 +272,7 @@ p
 
 Euler-Diagram:
 
-```{r vennDiagramGSEA, include=FALSE}
+```{r eulerDiagramGSEA}
 venn.colors <- c(params$tissue_pal, scales::hue_pal()(4))
 
 sign_geneSets_gastroc <-
@@ -295,13 +295,13 @@ gene_sets <- list(
 # euler: two tissues
 p <- plot(
   euler(gene_sets),
-  quantities = T,
-  legend = list(side = "right"),
+  quantities = list(cex = 2),
+  legend = list(side = "bottom", cex = 2),
   fills = venn.colors,
-  main = "significant gene sets (GSEA)"
+  # main = "significant gene sets (GSEA)"
 )
-ggsave(filename = file.path("plots", "04_euler.svg"), p)
-ggsave(filename = file.path("plots", "04_euler.png"), p)
+ggsave(filename = file.path(plot.dir, "04_euler.svg"), p)
+ggsave(filename = file.path(plot.dir, "04_euler.png"), p)
 p
 ```
 

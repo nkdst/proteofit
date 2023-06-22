@@ -345,16 +345,24 @@ gene_biotypes <- table(gastroc$gene_biotype, dnn = c("biotype")) %>%
   as.data.frame() %>%
   mutate(
     biotype = stringr::str_replace_all(biotype, "_", " "),
-    colors = params$treemap_pal(n())
+    colors = params$treemap_pal(n()),
     ) %>% 
   arrange(desc(Freq))
 
+# add percentage
+gene_biotypes <- gene_biotypes %>% 
+  mutate(
+    share = round(Freq / sum(gene_biotypes$Freq),2) * 100,
+    label = paste0(biotype, "\n", share, "%")
+  )
+
 treemap::treemap(gene_biotypes,
                  type = "color",
-                 index = "biotype",
+                 index = "label",
                  vSize = "Freq",
                  vColor = "colors",
-                 title = "Gene biotypes")
+                 title = "Gene biotypes",
+                 fontsize.labels = 20)
 # note: it occured sometimes, that when knitting the labels are omitted in the treemap
 ```
 
@@ -373,12 +381,20 @@ gene_biotypes_filtered <- filter(gastroc, rownames(gastroc) %in% rownames(counts
   mutate(biotype = stringr::str_replace_all(biotype, "_", " ")) %>% 
   merge(gene_biotypes[, c("biotype", "colors")], by = "biotype") # obtain the same colors
 
+# add percentage
+gene_biotypes_filtered <- gene_biotypes_filtered %>% 
+  mutate(
+    share = round(Freq / sum(gene_biotypes_filtered$Freq),2) * 100,
+    label = paste0(biotype, "\n", share, "%")
+  )
+
 treemap::treemap(gene_biotypes_filtered,
                  type = "color",
-                 index = "biotype",
+                 index = "label",
                  vColor = "colors",
                  vSize = "Freq",
-                 title = "Gene biotypes, filtered")
+                 title = "Gene biotypes, filtered",
+                 fontsize.labels = 20)
 ```
 
 The precise statistics of the changed distribution of biotypes can be seen in
@@ -489,6 +505,7 @@ p
 
 ```{r pca.both_save, include=FALSE}
 ggsave(file.path(plot.dir, "01_pca_mvg_both.svg"), p)
+ggsave(file.path(plot.dir, "01_pca_mvg_both.png"), p)
 ```
 
 

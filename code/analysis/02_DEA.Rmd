@@ -341,8 +341,10 @@ p
 ## scatter-plot: most differential genes, both tissues
 
 using the Wald-test `stat` from the DESeq2 result and filtering on the set
-`FCutoff=``r params$FCutoff` and `pCutoff=``r params$pCutoff` yields the following plot:
-```{r scatterDEA, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
+`FCutoff=``r params$FCutoff` and `pCutoff=``r params$pCutoff`
+
+
+```{r DE_genes_both}
 apply_cutoffs <- function(deseq.result, colname="stat", FCutoff, pCutoff) {
   res.filtered <- deseq.result %>%
     data.frame() %>%
@@ -371,7 +373,12 @@ res.combined <- merge(gastroc_res.filtered,
     TRUE ~ "different"
   )) %>% 
   merge(gene_names, by.x="Row.names", by.y=0)
- 
+```
+
+
+plotting the filtered (DE) genes.
+
+```{r scatterDEA, warning=FALSE, fig.width = 9, fig.height = 9, fig.retina = 2, dpi = 100}
 # removing all gene_names except the top_n_genes (sum of absolute Wald-test numbers)
 top_n_genes <- 10
 top_labels <- res.combined %>%
@@ -395,15 +402,21 @@ p <- ggplot(res.combined, aes(x = gastroc, y = soleus, label = gene_name)) +
   ggtitle(label = "DEA: t-statistics (Wald test)") +
   theme_bw() +
   theme(
-    axis.title = element_text(size = 13),
-    axis.text = element_text(size = 13),
-    title = element_text(size = 13),
-    legend.text = element_text(size = 10)
-  )
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 15),
+    title = element_text(size = 15),
+    legend.text = element_text(size = 14),
+    legend.title = element_blank(),
+    legend.position = "bottom"
+  ) + 
+  coord_fixed()
 
+p
+```
+
+```{r scatterDEA_save, include=FALSE}
 ggsave(file.path(plot.dir, "02_dea_scatter.svg"), p)
 ggsave(file.path(plot.dir, "02_dea_scatter.png"), p)
-p
 ```
 
 
@@ -412,11 +425,21 @@ p
 ```{r dea_scatter_barplot}
 p <- ggplot(res.combined, aes(x = diff.exp)) +
   geom_bar(aes(fill = diff.exp)) +
-  theme_bw()
-ggsave(file.path(plot.dir, "02_dea_scatter_barplot.svg"), p)
-ggsave(file.path(plot.dir, "02_dea_scatter_barplot.png"), p)
+  theme_bw() +
+  theme(legend.position = "none",
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 12),
+    axis.title.x = element_blank()
+        )
 p
 ```
+
+
+```{r dea_scatter_barplot_save, include=FALSE}
+ggsave(file.path(plot.dir, "02_dea_scatter_barplot.svg"), p)
+ggsave(file.path(plot.dir, "02_dea_scatter_barplot.png"), p)
+```
+
 
 ```{r include=FALSE}
 # obtain gene counts for the respective groups for visualizing
@@ -600,48 +623,153 @@ boxplot.top <- function(result, dds, se, upregulated=TRUE, n = 20, FCutoff = 1, 
   
   direction <- ifelse(upregulated, "up", "down")
   
-  ggplot(counts.plt,
+  plot <- ggplot(counts.plt,
          aes(
            x = as.factor(gene_name),
            y = normalized_counts,
            fill = genotype
          )) +
-    geom_dotplot(
-      binaxis = 'y',
-      stackdir = 'center',
-      dotsize = 0.3,
-      position = position_dodge(0.8),
-      fill = "black"
-    ) +
-    geom_boxplot(outlier.size = 0.3) +
-    scale_y_log10() +
+    # geom_dotplot(
+    #   binaxis = 'y',
+    #   stackdir = 'center',
+    #   dotsize = 0.2,
+    #   binpositions = "all",
+    #   stackgroups = T,
+    #   position = position_jitter(-0.3),
+    #   fill = "black"
+    # ) +
+    geom_boxplot(
+      outlier.size = 0.2,
+      position = position_dodge(0.5),
+      outlier.shape = NA,
+      ) +
+    scale_y_log10(limits = c(1, 1000000)) +
     xlab("Genes") +
     ylab("Normalized Counts") +
     scale_fill_manual(values = params$condition_pal) +
-    ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
+    # ggtitle(paste0("Top ", n, " ", direction, "-regulated Genes\n tissue: ", tissue)) +
     theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5)) +
+    # theme(plot.title = element_text(hjust = 0.5)) +
     theme(axis.text.x = element_text(
       angle = 45,
       hjust = 1,
       face = setBold(counts.plt$gene_name, c("Nfe2l1"))
     ))
+  return(plot)
 }
+# boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastrocnemius")
 ```
 
 ### gastroc
 
 ```{r topDiffBox.gastroc, warning=FALSE, message=FALSE}
-boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastrocnemius")
-boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastrocnemius")
+bp.gastroc.up <- boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = T, tissue = "gastrocnemius")
+bp.gastroc.up + theme(legend.position = "none", axis.title.x = element_blank())
+bp.gastroc.down <- boxplot.top(res.gastroc, dds.gastroc, se.gastroc, upregulated = F, tissue = "gastrocnemius")
+bp.gastroc.down + theme(legend.position = "none")
 ```
 
 ### soleus
 
 ```{r topDiffBox.soleus, warning=FALSE, message=FALSE}
-boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
-boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
+bp.soleus.up <- boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = T, tissue = "soleus")
+bp.soleus.up + theme(axis.title = element_blank())
+bp.soleus.down <- boxplot.top(res.soleus, dds.soleus, se.soleus, upregulated = F, tissue = "soleus")
+bp.soleus.down + theme(legend.position = "none", axis.title.y = element_blank())
 ```
+
+
+```{r include=FALSE, eval=FALSE}
+# Set the plot dimensions and scales
+plot_scale <- 0.9  # Adjust this value to resize the plots
+plot_width <- 6  # Adjust this value to set the width of each plot
+plot_height <- 4  # Adjust this value to set the height of each plot
+
+
+ggarrange(
+  bp.gastroc.up,
+  bp.soleus.up + theme(axis.text.y = element_blank()),
+  bp.gastroc.down,
+  bp.soleus.down + theme(axis.text.y = element_blank()),
+  ncol = 2, nrow= 2,
+  common.legend = TRUE,
+  legend = "bottom",
+  widths = c(plot_width, plot_width),
+  heights = c(plot_height, plot_height),
+  hjust = 0.5,
+  vjust = 0.5,
+  scale = plot_scale
+)
+
+combined_plot <- ggarrange(
+  bp.gastroc.up, bp.soleus.up + theme(axis.text.y = element_blank()), bp.gastroc.down, bp.soleus.down + theme(axis.text.y = element_blank()),
+  nrow = 2, ncol = 2,
+  common.legend = TRUE,
+  legend = "bottom",
+  widths = c(plot_width, plot_width),
+  heights = c(plot_height, plot_height),
+  hjust = 0.5, vjust = 0.5,
+  scale = plot_scale
+) 
+combined_plot
+
+
+annotate_figure(combined_plot,
+                top = text_grob("Visualizing len", color = "red", face = "bold", size = 14),
+                bottom = text_grob("Data source: \n ToothGrowth data set", color = "blue",
+                                   hjust = 1, x = 1, face = "italic", size = 10),
+                left = text_grob("Tooth length", color = "green", rot = 90),
+                right = "I'm done, thanks :-)!",
+                fig.lab = "Figure 1", fig.lab.face = "bold"
+)
+
+grid.(
+  arrangeGrob(
+  combined_plot,
+  left = textGrob(
+    "Normalized Counts",
+    rot = 90,
+    vjust = 1,
+    gp = gpar(cex = 1.3)
+  ),
+  bottom = textGrob("Genes", gp = gpar(cex = 1.3))
+))
+
+grid.arrange(arrangeGrob(plot, left = y.grob, bottom = x.grob))
+# ggarrange(bp.gastroc.up, bp.solues_up, bp.gastroc.down, bp.solues_down, common.legend = T)
+```
+
+```{r include=FALSE, eval=FALSE}
+
+plot <- plot_grid(
+  bp.gastroc.up + theme(legend.position = "none"),
+  bp.soleus.up + theme(axis.text.y = element_blank(), legend.position = "none"),
+  bp.gastroc.down + theme(legend.position = "none"),
+  bp.soleus.down + theme(axis.text.y = element_blank(), legend.position = "none"),
+  align = 'vh',
+  vjust = 1,
+  scale = 1
+)
+
+plot_grid(plot_grid(plot ,
+                 plot_grid(NULL, my_legend, ncol=1),
+                 rel_widths=c(1, 0.2)), )
+
+my_legend <- get_legend(bp.gastroc.up)
+
+
+grid.arrange(arrangeGrob(
+  plot,
+  left = textGrob(
+    "Normalized Counts",
+    rot = 90,
+    vjust = -0.3,
+    gp = gpar(cex = 1)
+  ),
+  bottom = textGrob("Genes", gp = gpar(cex = 1.3))
+))
+```
+
 
 
 ## Venn/Euler-Diagram
@@ -661,10 +789,10 @@ gene_sets <- c(
 # euler: two tissues
 p <- plot(
   euler(gene_sets),
-  quantities = T,
-  legend = list(side = "right"),
-  fills = venn.colors,
-  main = "significant genes"
+  quantities = list(cex = 1.7),
+  legend = list(side = "bottom", cex = 1.7),
+  fills = venn.colors
+  # main = "significant genes"
 )
 p
 ```
