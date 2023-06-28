@@ -126,121 +126,6 @@ But each annotation (column) has entries which are inconsistent!
 The focus in the subsequent analysis will remain using the gene_ids while most annotations, except the occasional gene name for plotting will not be used.
 
 
-
-# Quality assessment
-
-In this section the library sizes of the samples are compared with bar- and boxplots.
-
-## Library sizes
-
--   too many zero counts
--   different total counts
-
-```{r lib_sizes}
-plot.library_size <- function(counts, title="") {
-  cs <- colSums(counts) %>%
-    as.data.frame() %>%
-    dplyr::rename("colsums" = ".") %>%
-    tibble::rownames_to_column(var = "sample")
-  
-  ggplot(cs, aes(x = sample, y = colsums)) +
-    geom_bar(stat = "identity") +
-    theme(axis.text.x=element_text(color = "black", angle=45, vjust=.8, hjust=0.8)) + 
-    ggtitle(paste0("total counts, ", title))
-}
-
-
-plt.libsize.gastroc <- plot.library_size(counts.gastroc, title = "gastrocnemius") +
-  ylim(0, 4e07)
-plt.libsize.soleus <- plot.library_size(counts.soleus, title = "soleus") +
-  ylim(0, 4e07)
-
-ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
-                    ncol = 1, nrow = 2)
-```
-
-
-
-### count distribution boxplots
-
-Preparing the sample by applying log2 and loading metadata files
-
-```{r counts.distr.prep, message=FALSE}
-logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
-logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
-
-metadata.gastroc <- readr::read_csv2("./data/counts/sample_table_gastroc.csv") %>%
-  tibble::column_to_rownames("run")
-metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
-  tibble::column_to_rownames("run")
-```
-
-
-Resulting Plots:
-
-```{r counts.distr.plot, message=FALSE}
-plotBoxLog <- function(logcounts, metadata) {
-  stack(logcounts) %>%
-    merge(metadata, by.x = "ind", by.y = "sample_name") %>% 
-    ggplot( aes(x=ind, y=values, color=genotype)) +
-    scale_color_manual(values = params$condition_pal) +
-    geom_boxplot() + 
-    ylab("Log2(Counts+1)") +
-    xlab(element_blank()) +
-    theme(axis.text.x=element_text(angle=45, vjust=.8, hjust=0.8)) +
-    geom_hline(yintercept = median(as.matrix(logcounts)), col="blue" )
-}
-
-p1 <- plotBoxLog(logcounts.gastroc, metadata.gastroc) + 
-  ggtitle("gastrocnemius")
-p2 <- plotBoxLog(logcounts.soleus, metadata.soleus) + 
-  ggtitle("soleus") +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank()) +
-  rremove("ylab")
-```
-
-
-```{r counts.distr.pdf, echo=FALSE, message=FALSE}
-pdf(NULL) # avoiding blank plot created by ggarrange
-p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
-x = dev.off()  # see above
-p
-```
-
-
-
-### using DESeq2::rlog to normalize
-
-Just for exploration purpose, but the resulting data is not used in the
-following analysis.
-
-```{r counts.rlog.plot, message=FALSE}
-p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
-  as.data.frame() %>%
-  plotBoxLog(metadata.gastroc) + 
-  ggtitle("gastrocnemius") +
-  ylab("rlog(counts)")
-
-p2 <- DESeq2::rlog(as.matrix(counts.soleus)) %>%
-  as.data.frame() %>%
-  plotBoxLog(metadata.soleus) + 
-  ggtitle("soleus") +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank()) +
-  rremove("ylab")
-```
-
-
-```{r counts.rlog.pdf, echo=FALSE, message=FALSE}
-pdf(NULL) # avoiding blank plot created by ggarrange
-p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
-x = dev.off()  # see above
-p
-```
-
-
-
 # Filtering
 
 ## Overview
@@ -416,6 +301,121 @@ gene_biotypes_cmp <-
   )
 knitr::kable(gene_biotypes_cmp)
 ```
+
+
+
+# Quality assessment
+
+In this section the library sizes of the samples are compared with bar- and boxplots.
+
+## Library sizes
+
+-   too many zero counts
+-   different total counts
+
+```{r lib_sizes}
+plot.library_size <- function(counts, title="") {
+  cs <- colSums(counts) %>%
+    as.data.frame() %>%
+    dplyr::rename("colsums" = ".") %>%
+    tibble::rownames_to_column(var = "sample")
+  
+  ggplot(cs, aes(x = sample, y = colsums)) +
+    geom_bar(stat = "identity") +
+    theme(axis.text.x=element_text(color = "black", angle=45, vjust=.8, hjust=0.8)) + 
+    ggtitle(paste0("total counts, ", title))
+}
+
+
+plt.libsize.gastroc <- plot.library_size(counts.gastroc, title = "gastrocnemius") +
+  ylim(0, 4e07)
+plt.libsize.soleus <- plot.library_size(counts.soleus, title = "soleus") +
+  ylim(0, 4e07)
+
+ggpubr::ggarrange(plt.libsize.gastroc, plt.libsize.soleus,
+                    ncol = 1, nrow = 2)
+```
+
+
+
+### count distribution boxplots
+
+Preparing the sample by applying log2 and loading metadata files
+
+```{r counts.distr.prep, message=FALSE}
+logcounts.gastroc <- log2(counts.gastroc + 1) # avoiding -Inf with ++
+logcounts.soleus <- log2(counts.soleus + 1) # avoiding -Inf with ++
+
+metadata.gastroc <- readr::read_csv2("./data/counts/sample_table_gastroc.csv") %>%
+  tibble::column_to_rownames("run")
+metadata.soleus <- readr::read_csv2("./data/counts/sample_table_soleus.csv") %>%
+  tibble::column_to_rownames("run")
+```
+
+
+Resulting Plots:
+
+```{r counts.distr.plot, message=FALSE}
+plotBoxLog <- function(logcounts, metadata) {
+  stack(logcounts) %>%
+    merge(metadata, by.x = "ind", by.y = "sample_name") %>% 
+    ggplot( aes(x=ind, y=values, color=genotype)) +
+    scale_color_manual(values = params$condition_pal) +
+    geom_boxplot() + 
+    ylab("Log2(Counts+1)") +
+    xlab(element_blank()) +
+    theme(axis.text.x=element_text(angle=45, vjust=.8, hjust=0.8)) +
+    geom_hline(yintercept = median(as.matrix(logcounts)), col="blue" )
+}
+
+p1 <- plotBoxLog(logcounts.gastroc, metadata.gastroc) + 
+  ggtitle("gastrocnemius")
+p2 <- plotBoxLog(logcounts.soleus, metadata.soleus) + 
+  ggtitle("soleus") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  rremove("ylab")
+```
+
+
+```{r counts.distr.pdf, echo=FALSE, message=FALSE}
+pdf(NULL) # avoiding blank plot created by ggarrange
+p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
+x = dev.off()  # see above
+p
+```
+
+
+
+### using DESeq2::rlog to normalize
+
+Just for exploration purpose, but the resulting data is not used in the
+following analysis.
+
+```{r counts.rlog.plot, message=FALSE}
+p1 <- DESeq2::rlog(as.matrix(counts.gastroc)) %>%
+  as.data.frame() %>%
+  plotBoxLog(metadata.gastroc) + 
+  ggtitle("gastrocnemius") +
+  ylab("rlog(counts)")
+
+p2 <- DESeq2::rlog(as.matrix(counts.soleus)) %>%
+  as.data.frame() %>%
+  plotBoxLog(metadata.soleus) + 
+  ggtitle("soleus") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  rremove("ylab")
+```
+
+
+```{r counts.rlog.pdf, echo=FALSE, message=FALSE}
+pdf(NULL) # avoiding blank plot created by ggarrange
+p <- ggpubr::ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend = "right")
+x = dev.off()  # see above
+p
+```
+
 
 
 
