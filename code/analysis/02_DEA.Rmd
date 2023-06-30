@@ -33,9 +33,19 @@ library(ggplot2)
 library(DESeq2)
 library(SummarizedExperiment)
 
+
+if (!require("EnhancedVolcano", quietly = TRUE))
+  BiocManager::install("EnhancedVolcano")
+if (!require("eulerr", quietly = TRUE))
+  install.packages("eulerr")
 library(EnhancedVolcano)
 library(eulerr)
 library(RColorBrewer)
+
+
+if (!require("ashr", quietly = TRUE))
+  install.packages("ashr") # needed for lfcShring
+
 ```
 
 

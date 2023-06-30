@@ -3,12 +3,21 @@ library(dplyr)
 if (!requireNamespace("stringr")) {
   install.packages("stringr") # used in pca function
 }
+if (!requireNamespace("ggplot2")) {
+  install.packages("ggplot2")
+}
 
+if (!requireNamespace("ggfortify")) {
+  install.packages("ggfortify") 
+}
 
 library(ggplot2)
 library(ggfortify) # autoplot (PCA)
 
 if (! "ComplexHeatmap" %in% row.names(installed.packages())) {
+  if (!requireNamespace("devtools")) {
+    install.packages("devtools") 
+  }
   devtools::install_github("jokergoo/ComplexHeatmap", force = TRUE)
   # BiocManager::install("ComplexHeatmap")
 }

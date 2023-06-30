@@ -22,7 +22,6 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, results = "hold")
-library(DESeq2)
 library(dplyr)
 library(eulerr)
 library(ggplot2)
@@ -30,6 +29,14 @@ library(ggpubr)
 library(RColorBrewer)
 library(treemap)
 
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!require("DESeq2", quietly = TRUE))
+  BiocManager::install("DESeq2")
+if (!require("SummarizedExperiment", quietly = TRUE))
+  BiocManager::install("SummarizedExperiment")
+
+library(DESeq2)
 library(SummarizedExperiment)
 ```
 
